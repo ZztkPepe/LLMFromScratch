@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="360" viewBox="0 0 720 360" role="img" aria-labelledby="title desc">
+  <title id="title">Module 1 scalar training summary</title>
+  <desc id="desc">Final correct counts for scalar training on Simple, Diag, Split, and Xor datasets.</desc>
+  <rect width="720" height="360" fill="#f7f7f4"/>
+  <text x="40" y="44" font-family="Arial, sans-serif" font-size="22" fill="#1f2933">Module 1 scalar training summary</text>
+  <text x="40" y="72" font-family="Arial, sans-serif" font-size="14" fill="#4b5563">PTS=30, HIDDEN=8, RATE=0.5, EPOCHS=100</text>
+  <line x1="86" y1="282" x2="640" y2="282" stroke="#1f2933" stroke-width="1.5"/>
+  <line x1="86" y1="102" x2="86" y2="282" stroke="#1f2933" stroke-width="1.5"/>
+  <g font-family="Arial, sans-serif" font-size="12" fill="#4b5563">
+    <text x="54" y="286">0</text>
+    <text x="48" y="226">10</text>
+    <text x="48" y="166">20</text>
+    <text x="48" y="106">30</text>
+  </g>
+  <g font-family="Arial, sans-serif" font-size="13" fill="#1f2933">
+    <rect x="130" y="108" width="72" height="174" fill="#4aa9b8"/>
+    <text x="143" y="302">Simple</text>
+    <text x="144" y="98">29/30</text>
+    <rect x="258" y="114" width="72" height="168" fill="#d75244"/>
+    <text x="280" y="302">Diag</text>
+    <text x="274" y="104">28/30</text>
+    <rect x="386" y="120" width="72" height="162" fill="#8fbc5a"/>
+    <text x="398" y="302">Split</text>
+    <text x="402" y="110">27/30</text>
+    <rect x="514" y="120" width="72" height="162" fill="#c58b35"/>
+    <text x="537" y="302">Xor</text>
+    <text x="530" y="110">27/30</text>
+  </g>
+</svg>
