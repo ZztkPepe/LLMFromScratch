@@ -40,10 +40,7 @@ def settings_from_env() -> Settings:
 
     return Settings(
         database_url=os.getenv(database_url_env_var, ""),
-        internal_api_key=os.getenv(
-            "INTERNAL_API_KEY",
-            os.environ["INTERNAL_API_KEY"],
-        ),
+        internal_api_key=os.getenv("INTERNAL_API_KEY", ""),
         api_base_url=os.getenv(
             "API_BASE_URL",
             "http://127.0.0.1:8000",

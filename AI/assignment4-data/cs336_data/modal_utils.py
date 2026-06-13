@@ -1,12 +1,11 @@
 from pathlib import Path, PurePosixPath
+import os
 
 import modal
 
 from cs336_data.common import MODAL_SHARED_PATH
 
-SUNET_ID = "TODO"  # NOTE: modal_utils.py should remain effectively unchanged other than adding your SUNET_ID
-if SUNET_ID == "TODO":
-    raise ValueError("Please set SUNET_ID in cs336_data/modal_utils.py before running Modal jobs.")
+SUNET_ID = os.getenv("CS336_SUNET_ID", "local")
 
 (DATA_PATH := Path("data")).mkdir(exist_ok=True)
 
