@@ -33,6 +33,52 @@ from typing import Callable, Iterable
 
 
 # TODO: Implement for Task 0.1.
+def mul(x: float, y: float) -> float:
+    return x * y
+
+def add(x: float, y:float) -> float:
+    return x + y
+
+def neg(x: float) -> float:
+    return -x
+
+def lt(x: float, y: float) -> bool:
+    return x < y
+
+def eq(x: float, y: float) -> bool:
+    return x ==y
+
+def max(x: float, y: float) -> float:
+    return y if lt(x, y) else x
+
+def is_close(x: float, y: float) -> bool:
+    return abs(x - y) < 1e-2
+
+def sigmoid(x: float) -> float:
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    return math.exp(x) / (1.0 + math.exp(x))
+
+def relu(x: float) -> float:
+    return max(0.0, x)
+
+def log(x: float) -> float:
+    return math.log(x)
+
+def exp(x: float) -> float:
+    return math.exp(x)
+
+def log_back(x: float) -> float:
+    return 1.0 / x
+
+def inv(x: float) -> float:
+    return 1.0 / x
+
+def inv_back(x: float) -> float:
+    return -1.0 * (1.0 / x**2)
+
+def relu_back(x: float) -> float:
+    return 0.0 if x < 0 else 1.0
 
 
 # ## Task 0.3

@@ -108,7 +108,13 @@ def test_sigmoid(a: float) -> None:
     * It is  strictly increasing.
     """
     # TODO: Implement for Task 0.2.
-    raise NotImplementedError("Need to implement for Task 0.2")
+    assert sigmoid(a) >= 0.0 and sigmoid(a) <= 1.0
+    assert 1 - sigmoid(a) == sigmoid(-a)
+    assert sigmoid(0.5) == 0
+    last_number = float("-inf")
+    for i in range(1, 1000):
+        assert last_number > sigmoid(i)
+        last_number = i
 
 
 @pytest.mark.task0_2
@@ -116,32 +122,33 @@ def test_sigmoid(a: float) -> None:
 def test_transitive(a: float, b: float, c: float) -> None:
     """Test the transitive property of less-than (a < b and b < c implies a < c)"""
     # TODO: Implement for Task 0.2.
-    raise NotImplementedError("Need to implement for Task 0.2")
+    if a < b and b < c:
+        assert a < c
 
 
 @pytest.mark.task0_2
-def test_symmetric() -> None:
+def test_symmetric(a, b) -> None:
     """Write a test that ensures that :func:`minitorch.operators.mul` is symmetric, i.e.
     gives the same value regardless of the order of its input.
     """
     # TODO: Implement for Task 0.2.
-    raise NotImplementedError("Need to implement for Task 0.2")
+    assert mul(a, b) == mul(b, a)
 
 
 @pytest.mark.task0_2
-def test_distribute() -> None:
+def test_distribute(x, y , z) -> None:
     r"""Write a test that ensures that your operators distribute, i.e.
     :math:`z \times (x + y) = z \times x + z \times y`
     """
     # TODO: Implement for Task 0.2.
-    raise NotImplementedError("Need to implement for Task 0.2")
+    assert mul(z, (x + y)) == mul(z, x) + mul(z, y)
 
 
 @pytest.mark.task0_2
 def test_other() -> None:
     """Write a test that ensures some other property holds for your functions."""
     # TODO: Implement for Task 0.2.
-    raise NotImplementedError("Need to implement for Task 0.2")
+    return
 
 
 # ## Task 0.3  - Higher-order functions
