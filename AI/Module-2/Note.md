@@ -173,39 +173,36 @@ Module 2 对应真实框架中的这些机制：
 
 ## 第二章：如何完成 Human 路径
 
-这一章讲学生自己做 Module 2 时的路线。不要直接从训练脚本开始。Tensor 系统一旦底层 indexing 错了，上层所有操作都会错，而且错误现象会很难定位。
+这一章只给 Human 路径的文件级路线图：在哪些文件写代码、每个文件承担什么任务、如何验证。它不会直接给出实现代码。真正写作业时请在 `Human/Module-2` 下完成；`AI/Module-2` 只适合作为做完后的对照阅读。
 
 ### 1. 总体顺序
 
+开始前先处理前置条件：`Human/Module-2` 依赖 Module 0 和 Module 1 的实现。如果 `Human/Module-2/minitorch/operators.py`、`Human/Module-2/minitorch/module.py`、`Human/Module-2/minitorch/autodiff.py`、`Human/Module-2/minitorch/scalar.py`、`Human/Module-2/project/run_scalar.py` 仍然是“Need to include this file from past assignment”，先把你自己在前面 Human 模块完成的版本同步过来。
+
 推荐顺序：
 
-1. 先完成 TensorData 的索引、枚举和 permute。
-2. 再完成 broadcasting 相关函数。
-3. 再完成低层 `tensor_map`、`tensor_zip`、`tensor_reduce`。
-4. 再完成 Tensor Function 的 forward。
-5. 再完成 Tensor Function 的 backward。
-6. 最后实现 `run_tensor.py` 的训练网络。
+1. 在 `Human/Module-2/minitorch/tensor_data.py` 完成 TensorData 的索引、枚举和 permute。
+2. 仍在 `Human/Module-2/minitorch/tensor_data.py` 完成 broadcasting 相关函数。
+3. 在 `Human/Module-2/minitorch/tensor_ops.py` 完成低层 `tensor_map`、`tensor_zip`、`tensor_reduce`。
+4. 在 `Human/Module-2/minitorch/tensor_functions.py` 完成 Tensor Function 的 forward。
+5. 在 `Human/Module-2/minitorch/tensor_functions.py` 完成 Tensor Function 的 backward。
+6. 在 `Human/Module-2/project/run_tensor.py` 完成 Tensor 训练网络。
 
 这个顺序很重要。因为后面的所有 Tensor 运算都依赖前面的索引规则。
 
 ### 2. Task 2.1：TensorData indexing
 
-这一任务要你实现“多维索引如何找到一维 storage 位置”。
+需要写代码的文件：`Human/Module-2/minitorch/tensor_data.py`。
 
-学生应该先手算小例子：
+你要完成三个位置：
 
-```text
-shape = (3, 5)
-strides = (5, 1)
-index = (1, 2)
-position = 7
-```
+- `index_to_position`：把多维 index 和 strides 转成 storage 位置。
+- `to_index`：把线性 ordinal 转成某个 shape 下的多维 index。
+- `TensorData.permute`：返回共享同一 storage、但 shape/strides 维度顺序改变的新 `TensorData`。
 
-然后再考虑：
+不要复制 storage 来实现 permute；本任务要训练的是“同一段底层数据可以用不同 strides 解释”的思想。
 
-- 如何把 ordinal `0, 1, 2, ...` 枚举成所有多维 index。
-- permute 后 shape 和 strides 应该如何变化。
-- permute 是否应该复制 storage。
+验证位置：`Human/Module-2/tests/test_tensor_data.py` 中标记为 `task2_1` 的测试。
 
 检查重点：
 
@@ -220,24 +217,25 @@ position = 7
 - permute 时复制了 storage，破坏共享布局的意义。
 - `to_index` 的维度顺序写反。
 
+怎样测试：
+
+```sh
+cd Human/Module-2
+python -m pytest tests/test_tensor_data.py -m task2_1 -q
+```
+
 ### 3. Task 2.2：Broadcasting
 
-Broadcasting 的规则是从右往左对齐维度。
+需要写代码的文件：`Human/Module-2/minitorch/tensor_data.py`。
 
-学生应该先判断形状是否兼容：
+你要完成两个位置：
 
-- 相同维度可以兼容。
-- 某一边是 1 可以兼容。
-- 缺失的高维可以当作 1。
-- 其他情况不兼容。
+- `shape_broadcast`：根据两个输入 shape 计算共同输出 shape，无法兼容时抛出 `IndexingError`。
+- `broadcast_index`：把较大输出 shape 的 index 映射回某个较小输入 shape 的 index。
 
-例如：
+写这部分时先从右侧维度对齐的规则出发，不要真的复制 Tensor 数据。broadcasting 在这里是索引映射，不是数据扩容。
 
-```text
-(2, 5) 和 (5,)      -> 可以，结果 (2, 5)
-(5, 2) 和 (5,)      -> 不可以
-(5, 1, 5, 1) 和 (1, 5, 1, 5) -> 可以
-```
+验证位置：`Human/Module-2/tests/test_tensor_data.py` 中标记为 `task2_2` 的测试。
 
 检查重点：
 
@@ -251,23 +249,26 @@ Broadcasting 的规则是从右往左对齐维度。
 - 真的复制数据，而不是通过索引映射复用。
 - 对少维 Tensor 没有加 offset。
 
+怎样测试：
+
+```sh
+cd Human/Module-2
+python -m pytest tests/test_tensor_data.py -m task2_2 -q
+```
+
 ### 4. Task 2.3：Tensor map、zip、reduce
 
-这一任务把 Module 0 的高阶函数思想推广到 Tensor。
+需要写代码的文件：`Human/Module-2/minitorch/tensor_ops.py`、`Human/Module-2/minitorch/tensor_functions.py`。
 
-思考方式：
+在 `tensor_ops.py` 中，你要完成低层 storage 版本的三个执行器：
 
-- `map`：一个输入，一个输出，每个元素独立变换。
-- `zip`：两个输入，一个输出，对应元素合并。
-- `reduce`：一个输入，一个输出，沿某个维度折叠。
+- `tensor_map`：枚举输出位置，把输入 index 映射到对应 storage，再写入输出 storage。
+- `tensor_zip`：同时处理两个输入 Tensor，支持 broadcasting 后的逐元素二元函数。
+- `tensor_reduce`：沿指定维度折叠输入，把结果写到输出 storage。
 
-学生不应该先写很多特殊情况。应该先写统一流程：
+在 `tensor_functions.py` 中，你要完成 Task 2.3 标记的 forward 方法，例如乘法、sigmoid、ReLU、log、exp、比较、近似相等和 permute。这些 forward 应该调用 backend 上已经封装好的 map/zip/reduce 能力，而不是重新手写一遍 storage 遍历。
 
-1. 枚举输出位置。
-2. 把输出 ordinal 转成输出 index。
-3. 根据 broadcasting 规则得到输入 index。
-4. 用 strides 找到 storage 位置。
-5. 应用函数并写入输出 storage。
+验证位置：`Human/Module-2/tests/test_tensor.py` 中标记为 `task2_3` 的测试。
 
 检查重点：
 
@@ -283,24 +284,33 @@ Broadcasting 的规则是从右往左对齐维度。
 - reduce 时没有从初始值开始累积。
 - reduce 只处理二维情况，无法推广到更多维。
 
+怎样测试：
+
+```sh
+cd Human/Module-2
+python -m pytest tests/test_tensor.py -m task2_3 -q
+```
+
 ### 5. Task 2.4：Tensor backward
 
-Tensor backward 和 Scalar backward 思路一样，但返回的是 Tensor 梯度。
+需要写代码的文件：`Human/Module-2/minitorch/tensor_functions.py`。
 
-学生应该先理解每个函数的局部规则：
+你要补齐 Task 2.4 标记的 backward 方法。每个方法只负责本 Tensor Function 的局部反向规则：
 
-- 加法：两个输入都收到同样的上游梯度。
-- 乘法：一个输入的梯度要乘以另一个输入。
-- sigmoid：用 sigmoid 输出计算局部梯度。
-- ReLU：输入大于 0 的地方传递梯度，否则为 0。
-- sum：反向时梯度要广播回原形状。
-- permute：反向时要用逆排列换回维度。
+- 需要 forward 保存输入或输出时，使用 `ctx.save_for_backward`。
+- 返回值数量要和 forward 输入数量一致。
+- 对比较类、索引类或形状参数这类不可导输入，返回零梯度或非 Tensor 占位。
+- 对 permute 这类重排操作，backward 要把梯度维度恢复到输入顺序。
+
+本任务通常不需要修改 `Human/Module-2/minitorch/tensor.py`。`Tensor.expand`、`Tensor.chain_rule` 等接口已经为 broadcasting 后的梯度还原提供入口；你要做的是让各个 Function 返回正确形态的局部梯度。
+
+验证位置：`Human/Module-2/tests/test_tensor.py` 中标记为 `task2_4` 的测试。
 
 检查重点：
 
 - backward 返回数量是否和 forward 输入数量一致。
 - 广播输入的梯度形状是否能还原。
-- 比较函数是否返回零梯度。
+- 比较函数是否不会向输入传递有效梯度。
 - `grad_check` 是否通过。
 
 容易出错的地方：
@@ -310,29 +320,25 @@ Tensor backward 和 Scalar backward 思路一样，但返回的是 Tensor 梯度
 - permute 的 backward 没有使用逆排列。
 - sum 的 backward 没考虑被 reduce 的维度。
 
+怎样测试：
+
+```sh
+cd Human/Module-2
+python -m pytest tests/test_tensor.py -m task2_4 -q
+```
+
 ### 6. Task 2.5：Tensor 训练
 
-这一任务把前面所有 Tensor 机制用于训练网络。
+需要写代码的文件：`Human/Module-2/project/run_tensor.py`。
 
-学生应该先明确输入形状：
+你要完成两个位置：
 
-```text
-X shape = (N, 2)
-```
+- `Linear.forward`：用 Tensor 运算实现一层线性变换，输入是一批样本，输出是一批 hidden/output 表示。
+- `Network.forward`：串起三层线性层，前两层接 ReLU，最后一层输出概率。
 
-线性层应该把：
+本模块还没有矩阵乘法，所以不要去改 `tensor_ops.py` 里的 `matrix_multiply`，也不要为了训练脚本临时引入外部矩阵库。线性层应当用本模块已有的 Tensor 操作表达，这样才能真正测试 broadcasting、sum、view、relu、sigmoid 是否协同工作。
 
-```text
-(N, in_size)
-```
-
-变成：
-
-```text
-(N, out_size)
-```
-
-本模块还没有矩阵乘法，所以可以用 broadcasting 和 sum 实现线性层。你应该先从形状推导，而不是先写代码。
+验证方式：先通过 `task2_1` 到 `task2_4` 的测试，再运行 `Human/Module-2/project/run_tensor.py` 或项目 app 观察训练是否能正常降低 loss。
 
 检查重点：
 
@@ -347,6 +353,13 @@ X shape = (N, 2)
 - `sum(1)` 后忘记把 `(batch, 1, out)` reshape 成 `(batch, out)`。
 - 参数 Tensor 没有注册，优化器找不到。
 - 训练时没有清空旧梯度。
+
+怎样测试：
+
+```sh
+cd Human/Module-2
+python project/run_tensor.py
+```
 
 ## 第三章：代码实现、逻辑与细节讲解
 

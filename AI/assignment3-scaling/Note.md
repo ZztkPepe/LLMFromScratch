@@ -31,9 +31,74 @@ TrainingConfig
   -> POST /final_submission 提交最终方案
 ```
 
-## 2. 先理解 Scaling Laws
+## 第二章：如何完成 Human 路径
 
-### 2.1 什么是 IsoFLOPs
+这一章只说明 Human 路径要在哪些文件写代码或实验记录、每一步完成什么行为、怎样测试。Assignment3 有两类工作：本地代码/服务端 correctness，以及 hosted API 上的真实 scaling-law 实验。不要用 synthetic 曲线结果冒充最终 leaderboard 结论。
+
+### 1. Task 1：读清楚作业边界和测试入口
+
+需要查看的文件：`Human/assignment3-scaling/cs336_assignment3_scaling.pdf`、`Human/assignment3-scaling/README.md`、`Human/assignment3-scaling/tests/test_api.py`、`Human/assignment3-scaling/tests/test_scheduler.py`。
+
+先弄清楚四件事：
+
+- 作业目标是在有限预算内找到更低 validation loss，而不是训练最大模型。
+- `TrainingConfig` 的合法性会影响 API 是否接受实验。
+- queued/running/completed/failed 实验对 budget 的计算规则不同。
+- 最终提交由 `POST /final_submission` 保存，并包含完整配置和预测 loss。
+
+怎样测试：
+
+```sh
+cd Human/assignment3-scaling
+uv run python -c "import cs336_scaling; print('ok')"
+```
+
+### 2. Task 2：理解并实现 TrainingConfig 校验
+
+需要写代码的文件：`Human/assignment3-scaling/cs336_scaling/training/training_config.py`、`Human/assignment3-scaling/cs336_scaling/stable_hash.py`。
+
+你要确保训练配置在进入 API 前能被可靠校验，例如 token 数整除关系、attention head 维度关系、RoPE 维度要求、optimizer 参数范围、稳定 hash 和重复提交识别。这里不要为了单个测试绕过校验；hosted API 也依赖这些约束保护真实训练。
+
+怎样测试：
+
+```sh
+cd Human/assignment3-scaling
+uv run --extra server pytest tests/test_api.py::test_submit_jobs -q
+```
+
+如果本机没有 PostgreSQL，这类 API 测试会停在数据库连接；先安装并启动 PostgreSQL，再重跑。
+
+### 3. Task 3：实现 budget 和 public API 行为
+
+需要写代码的文件：`Human/assignment3-scaling/cs336_scaling/api/public.py`、`Human/assignment3-scaling/cs336_scaling/budget.py`、`Human/assignment3-scaling/cs336_scaling/client.py`、`Human/assignment3-scaling/cs336_scaling/schemas/`。
+
+你要让 submit、budget、experiments、experiment detail、final submission 这些公开接口行为一致。重点是预算预留、重复配置拒绝、final submission 覆盖语义，以及 client 侧返回结构。
+
+怎样测试：
+
+```sh
+cd Human/assignment3-scaling
+uv run --extra server pytest tests/test_api.py -q
+```
+
+这同样需要可用 PostgreSQL 测试数据库。
+
+### 4. Task 4：实现调度公平性
+
+需要写代码的文件：`Human/assignment3-scaling/cs336_scaling/scheduler/experiment_selector.py`。
+
+调度器应该优先照顾当前 running job 少的用户，再按排队时间排序。同一用户连续排多个任务时，要避免该用户把队列前部全部占满。
+
+怎样测试：
+
+```sh
+cd Human/assignment3-scaling
+uv run --extra server pytest tests/test_scheduler.py -q
+```
+
+### 5. Task 5：实现和使用 IsoFLOPs 分析脚本
+
+需要写代码的文件：`Human/assignment3-scaling/scripts/fit_isoflops.py`，输入数据来自 `Human/assignment3-scaling/data/isoflops_curves.json`。
 
 IsoFLOPs 的意思是：固定总训练 compute budget `C`，改变模型参数量 `N` 和训练 token 数 `D`，观察最终验证 loss。
 
@@ -45,9 +110,7 @@ C ≈ 6 * N * D
 
 所以在固定 `C` 时，模型越大，能训练的 token 数通常越少；模型越小，能训练的 token 数越多。loss 曲线通常会出现一个最低点，这个点就是该 compute budget 下的 compute-optimal 配置。
 
-### 2.2 本地 synthetic 数据怎么用
-
-`data/isoflops_curves.json` 有 72 个点：9 个 compute budget，每个 budget 8 个模型规模。新增脚本会做三件事：
+脚本应该做三件事：
 
 1. 按 `compute_budget` 分组。
 2. 在每组里选择 `final_loss` 最低的点。
@@ -59,43 +122,16 @@ D_opt(C) = a_D * C^b_D
 L_opt(C) = E + A * C^(-alpha)
 ```
 
-运行方式：
+怎样测试：
 
 ```sh
+cd Human/assignment3-scaling
 uv run python scripts/fit_isoflops.py --target-compute-budget 1e22
 ```
 
-当前 synthetic 数据给出的拟合结果是：
+### 6. Task 6：设计 hosted API 实验和最终提交
 
-```text
-N_opt(C) = 1.163411e+00 * C^0.468683
-D_opt(C) = 1.432570e-01 * C^0.531317
-L_opt(C) = 2.708387 + 6.530819e+03 * C^-0.176344
-```
-
-如果外推到 `C=1e22`，脚本估计：
-
-```text
-parameters  ≈ 2.38e10
-train_tokens ≈ 7.00e10
-final_loss   ≈ 3.570
-```
-
-这只是 synthetic curves 的基线，不等于 hosted API 的最终答案。真正的最终提交还需要用你的 12 B200-hour budget 做实验校准。
-
-## 3. 人类完成路径
-
-### 3.1 读 PDF 时抓住四件事
-
-第一，作业的目标不是训练最大模型，而是在预算内找到最优 loss。大模型如果 token 不够，会 undertrained；小模型如果参数不够，会 capacity-limited。
-
-第二，budget 是按实验预留的。`POST /submit` 时，服务端会把 `max_runtime_seconds` 计入预算；queued/running 实验按最大运行时长占用预算，completed/failed 实验按实际使用时间计入，但至少计 1 秒且不超过 `max_runtime_seconds`。
-
-第三，API 是工作流入口。你需要提交多个 `TrainingConfig`，查看每个实验的 validation loss，再基于结果更新下一轮实验设计。
-
-第四，最终提交由 `POST /final_submission` 保存：它包含一个完整 `training_config` 和你预测的 `predicted_final_loss`。
-
-### 3.2 设计实验的建议流程
+需要使用或更新的文件：`Human/assignment3-scaling/cs336_scaling/client.py`、你的实验记录、最终 `TrainingConfig` 记录。
 
 先用 synthetic curves 建立直觉：
 
@@ -135,6 +171,20 @@ save_final_submission(
     predicted_final_loss=predicted_loss,
 )
 ```
+
+怎样测试：
+
+```sh
+cd Human/assignment3-scaling
+export A3_API_KEY=<your_api_key>
+uv run python - <<'PY'
+from cs336_scaling.client import get_budget, list_experiments
+print(get_budget())
+print(list_experiments())
+PY
+```
+
+这一步依赖 hosted API 和你的真实 API key；不能用本地 synthetic 结果替代真实实验记录。
 
 ## 4. 代码框架设计
 

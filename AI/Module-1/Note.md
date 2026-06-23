@@ -165,34 +165,32 @@ Module 1 实现的是同样思想的标量版本。它没有 Tensor 的多维数
 
 ## 第二章：如何完成 Human 路径
 
-这一章讲学生自己应该如何完成作业。目标是帮助你形成解题路线，而不是直接暴露完整实现。
+这一章只说明 Human 路径要在哪些文件里写什么，不直接给出实现代码。所有实际作业代码都应写在 `Human/Module-1` 下；`AI/Module-1` 只能作为完成后的阅读材料，不建议边看边抄。
 
 ### 1. 总体路线
 
-建议按下面顺序做：
+开始前先处理前置条件：`Human/Module-1` 依赖 Module 0 的实现。如果 `Human/Module-1/minitorch/operators.py`、`Human/Module-1/minitorch/module.py`、`Human/Module-1/tests/test_operators.py`、`Human/Module-1/tests/test_module.py` 仍然是“Need to include this file from past assignment”，先把你自己在 `Human/Module-0` 完成的版本同步过来，再做 Module 1。
 
-1. 理解数值导数，用 `central_difference` 做导数检查。
-2. 让 `Scalar` 支持基础运算。
-3. 理解 `ScalarFunction.apply` 如何在 forward 时记录历史。
-4. 实现 `chain_rule`，让单个节点能把梯度传给父节点。
-5. 实现拓扑排序和 `backpropagate`，让整张图都能反向传播。
-6. 为每个基础函数写 backward。
-7. 最后实现 `run_scalar.py` 中的训练网络。
+建议按下面顺序推进：
+
+1. 在 `Human/Module-1/minitorch/autodiff.py` 完成 `central_difference`。
+2. 在 `Human/Module-1/minitorch/scalar.py` 和 `Human/Module-1/minitorch/scalar_functions.py` 完成 Scalar 的前向运算。
+3. 在 `Human/Module-1/minitorch/scalar.py` 完成 `chain_rule`。
+4. 在 `Human/Module-1/minitorch/autodiff.py` 完成拓扑排序和整图反向传播。
+5. 在 `Human/Module-1/minitorch/scalar_functions.py` 补齐各个 ScalarFunction 的 backward。
+6. 在 `Human/Module-1/project/run_scalar.py` 完成三层 Scalar 网络和线性层 forward。
 
 不要一开始就写训练。训练失败时很难判断问题在网络、优化器、forward，还是 backward。应该先让最小自动微分系统通过测试。
 
 ### 2. Task 1.1：中心差分
 
-中心差分的作用是给自动微分提供一个“人工尺子”。
+需要写代码的文件：`Human/Module-1/minitorch/autodiff.py`。
 
-你可以把它理解成：把输入往左挪一点，再往右挪一点，看看输出差了多少。这个差值能近似导数。
+你要完成 `central_difference`，让它能对任意一个指定参数位置做数值导数近似。这个函数后面会被 `derivative_check` 用来检查自动微分结果。
 
-学生应该检查：
+写这部分时只关心数值检查工具本身，不要引入计算图、`ScalarHistory` 或 backward 逻辑。
 
-- 对 `id(x)`，导数应接近 1。
-- 对 `add(x, y)`，任意一个参数的导数都应接近 1。
-- 对 `mul(x, y)`，对 `x` 的导数应和 `y` 有关，对 `y` 的导数应和 `x` 有关。
-- 对 `exp(x)`，导数应接近 `exp(x)`。
+验证位置：`Human/Module-1/tests/test_scalar.py` 中标记为 `task1_1` 的测试。
 
 容易出错的地方：
 
@@ -200,17 +198,26 @@ Module 1 实现的是同样思想的标量版本。它没有 Tensor 的多维数
 - 使用前向差分而不是中心差分，误差更大。
 - 忘记除以 `2 * epsilon`。
 
+怎样测试：
+
+```sh
+cd Human/Module-1
+python -m pytest tests/test_scalar.py -m task1_1 -q
+```
+
 ### 3. Task 1.2：Scalar 前向计算
 
-这一步要让 `Scalar` 像普通数字一样参与计算。
+需要写代码的文件：`Human/Module-1/minitorch/scalar.py`、`Human/Module-1/minitorch/scalar_functions.py`。
 
-你应该先理解：`Scalar(a) + Scalar(b)` 不应该直接返回 float，而应该返回新的 `Scalar`。因为新结果还要记住它是由哪个函数算出来的。
+在 `scalar.py` 中，你要补齐 `Scalar` 的用户接口：
 
-检查重点：
+- 算术运算符：加、减、取负、除法相关组合。
+- 比较运算符：小于、大于、相等。
+- 方法调用：`log()`、`exp()`、`sigmoid()`、`relu()`。
 
-- 加法、乘法、取负、减法、除法是否返回 `Scalar`。
-- `log`、`exp`、`sigmoid`、`relu` 是否能通过 `Scalar` 方法调用。
-- 结果的 `.data` 是否和普通 Python 数值一致。
+在 `scalar_functions.py` 中，你要补齐各个 `ScalarFunction.forward`，让 `ScalarFunction.apply` 能创建带 history 的新 `Scalar`。这里不要绕过 `apply` 直接返回 float；否则 forward 数值看起来对，后面 backward 会没有计算历史。
+
+验证位置：`Human/Module-1/tests/test_scalar.py` 中标记为 `task1_2` 的测试。
 
 容易出错的地方：
 
@@ -218,22 +225,20 @@ Module 1 实现的是同样思想的标量版本。它没有 Tensor 的多维数
 - 运算结果丢失 history。
 - `__gt__` 和 `__lt__` 的方向写反。
 
-### 4. Task 1.3：单节点链式法则
+怎样测试：
 
-这一任务不是整张图的反向传播，而是一个节点如何把梯度传给父节点。
-
-学生应该先想一个简单例子：
-
-```text
-y = x * w
+```sh
+cd Human/Module-1
+python -m pytest tests/test_scalar.py -m task1_2 -q
 ```
 
-如果输出端传来梯度 `d_output`，那么：
+### 4. Task 1.3：单节点链式法则
 
-- 传给 `x` 的梯度和 `w` 有关；
-- 传给 `w` 的梯度和 `x` 有关。
+需要写代码的文件：`Human/Module-1/minitorch/scalar.py`。
 
-`chain_rule` 做的就是这件事：调用当前函数的 backward，拿到每个输入的梯度，再把它和对应输入配对。
+你要完成 `Scalar.chain_rule`。它只负责一个节点：从当前节点的 `history` 找到最后一个函数、上下文和输入变量，调用该函数的 backward，再把每个非 constant 输入和对应梯度配对返回。
+
+不要在 `chain_rule` 里遍历整张图，也不要在这里直接写入叶子变量的 `derivative`。整图遍历和梯度累积属于 Task 1.4。
 
 检查重点：
 
@@ -241,17 +246,25 @@ y = x * w
 - 常量输入不需要累积梯度。
 - 返回的是一组 `(变量, 梯度)`。
 
-### 5. Task 1.4：整张图的反向传播
+验证位置：`Human/Module-1/tests/test_autodiff.py` 中标记为 `task1_3` 的测试。
 
-这一步把单节点链式法则推广到整张计算图。
+怎样测试：
 
-建议学生先画图，再写代码。特别要注意同一个变量被使用多次的情况：
-
-```text
-y = x + x
+```sh
+cd Human/Module-1
+python -m pytest tests/test_autodiff.py -m task1_3 -q
 ```
 
-这里 `x` 对 `y` 的总影响应该是两条路径的和。如果实现只保留最后一次梯度，就会错。
+### 5. Task 1.4：整张图的反向传播
+
+需要写代码的文件：`Human/Module-1/minitorch/autodiff.py`、`Human/Module-1/minitorch/scalar_functions.py`。
+
+在 `autodiff.py` 中，你要完成：
+
+- `topological_sort`：从输出节点出发，得到适合反向传播的非 constant 节点顺序。
+- `backpropagate`：沿拓扑顺序传递梯度，把叶子变量的梯度累积起来，把中间变量的梯度继续传给父节点。
+
+在 `scalar_functions.py` 中，你要补齐 Task 1.4 标记的 backward 方法。每个 backward 只描述本函数的局部梯度规则，并返回和 forward 输入数量一致的梯度结果。
 
 检查重点：
 
@@ -260,28 +273,25 @@ y = x + x
 - 同一个叶子变量的梯度是否累加，而不是覆盖。
 - 非叶子节点是否继续向父节点传播。
 
-测试现象：
+验证位置：
 
-- 如果 `test_backprop3`、`test_backprop4` 这类共享变量测试失败，通常是梯度没有累加。
-- 如果简单链式结构失败，通常是拓扑排序或父节点遍历顺序有问题。
+- `Human/Module-1/tests/test_autodiff.py` 中标记为 `task1_4` 的反向传播结构测试。
+- `Human/Module-1/tests/test_scalar.py` 中标记为 `task1_4` 的导数检查测试。
 
-### 6. ScalarFunction 的 backward
+怎样测试：
 
-每个基础函数都要知道自己的局部导数。学生不需要一开始背所有公式，但要理解“每个函数只负责自己这一小段”。
-
-例如乘法只负责回答：
-
-```text
-如果 y = a * b，那么 y 对 a、b 分别怎么变？
+```sh
+cd Human/Module-1
+python -m pytest tests/test_autodiff.py tests/test_scalar.py -m task1_4 -q
 ```
 
-Sigmoid 只负责回答：
+### 6. ScalarFunction 的 backward 工作边界
 
-```text
-如果 y = sigmoid(x)，那么 y 对 x 怎么变？
-```
+需要写代码的文件：`Human/Module-1/minitorch/scalar_functions.py`。
 
-这些局部答案会被反向传播系统自动串起来。
+这一节单独强调边界：`ScalarFunction.backward` 不应该知道整张计算图，也不应该修改任何变量的 `derivative`。它只根据 forward 保存的上下文和传入的上游梯度，返回本函数各个输入位置应该收到的局部梯度。
+
+需要处理的类包括 `Mul`、`Inv`、`Neg`、`Sigmoid`、`ReLU`、`Exp`、`LT`、`EQ`；`Add` 和 `Log` 已经给出示例，可以作为接口风格参考，但不要直接把别的函数硬套成同一种返回形状。
 
 容易出错的地方：
 
@@ -289,29 +299,38 @@ Sigmoid 只负责回答：
 - 忘记在 forward 中保存 backward 需要的值。
 - 比较函数 `LT`、`EQ` 这类不可导或离散函数没有返回零梯度。
 
+怎样测试：
+
+```sh
+cd Human/Module-1
+python -m pytest tests/test_scalar.py -m task1_4 -q
+```
+
 ### 7. Task 1.5：Scalar 训练
 
-训练网络前，先理解训练循环：
+需要写代码的文件：`Human/Module-1/project/run_scalar.py`。
 
-1. 用当前参数做 forward，得到预测。
-2. 根据预测和标签计算 loss。
-3. 调用 backward，得到每个参数的梯度。
-4. 优化器按梯度更新参数。
-5. 重复多轮。
+你要完成两个位置：
 
-学生实现 `run_scalar.py` 时，应检查：
+- `Network.__init__`：注册三层线性层，结构应和已有 `forward` 逻辑匹配。
+- `Linear.forward`：用输入列表、权重参数和 bias 参数计算每个输出单元。
 
-- 网络是否有三层：输入层到隐藏层、隐藏层到隐藏层、隐藏层到输出层。
-- 参数是否用 `Parameter` 注册。
-- 前两层是否使用 ReLU。
-- 输出是否使用 sigmoid。
-- loss 是否对每个样本反向传播并按数据量缩放。
+不要改 `ScalarTrain.train` 来掩盖网络实现问题。训练循环已经负责清梯度、计算 loss、调用 backward 和执行 optimizer；你要补的是模型结构和线性层计算。
+
+验证方式：先通过前面所有 `task1_*` 测试，再运行 `Human/Module-1/project/run_scalar.py` 或项目 app 观察训练是否能降低 loss。
 
 容易出错的地方：
 
 - 参数没有注册，导致 `SGD` 找不到。
 - 每轮训练前没有 `zero_grad`，导致梯度跨 epoch 累积。
 - 最后一层没有 sigmoid，概率不在 0 到 1 之间。
+
+怎样测试：
+
+```sh
+cd Human/Module-1
+python project/run_scalar.py
+```
 
 ## 第三章：代码实现、逻辑与细节讲解
 

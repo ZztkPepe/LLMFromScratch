@@ -81,37 +81,39 @@ PDF 后半部分还要求 TinyStories、OpenWebText、消融实验和 leaderboar
 
 ## 第二章：如何完成 Human 路径
 
-Human 路径建议按“先可测试核心，再长跑实验”的顺序推进。不要一开始就写训练脚本，因为训练脚本只会放大底层组件里的 bug。
+这一章只说明 Human 路径要在哪些文件写代码、每一步完成什么行为、怎样测试。不要把具体实现写进笔记里；真正作业代码应写在 `Human/assignment1-basics` 下，`tests/adapters.py` 只做薄适配。
 
-### 1. 先读 PDF、tests 和 adapters
+### 1. Task 1：接通测试适配层
 
-首先读 `cs336_assignment1_basics.pdf` 的四条主线：BPE tokenizer、Transformer LM、训练工具、实验。然后看 `tests/adapters.py`，因为测试只通过 adapters 调用你的代码。
+需要写代码的文件：`Human/assignment1-basics/tests/adapters.py`，以及你在 `Human/assignment1-basics/cs336_basics/` 下创建或补齐的实现模块。
 
-正确的 adapters 应该很薄：创建你的类、加载测试给定的权重、调用 forward 或函数。不要把真正逻辑写在 adapters 里，否则代码会难复用，也违背 PDF 的设计。
+先读 `cs336_assignment1_basics.pdf` 和 `tests/adapters.py`。测试只通过 `run_*` adapter 调你的代码，所以第一步是决定实现模块边界，然后让 adapter 转发到这些模块。adapter 不应该承载 BPE、模型、优化器等业务逻辑。
 
-完成这一阶段后，应该能回答：
+建议的实现文件边界：
 
-- 哪些接口必须存在？
-- 每个输入输出 tensor 的 shape 是什么？
-- 哪些地方需要数值稳定？
-- 哪些地方不能用 `torch.nn.functional` 或 `torch.optim.AdamW` 这类现成实现？
+- `cs336_basics/bpe.py`：BPE 训练。
+- `cs336_basics/tokenizer.py`：Tokenizer。
+- `cs336_basics/model.py`：Transformer 组件。
+- `cs336_basics/nn_utils.py`：softmax、cross entropy、gradient clipping。
+- `cs336_basics/optim.py`：AdamW 和学习率 schedule。
+- `cs336_basics/data.py`：batch sampling。
+- `cs336_basics/serialization.py`：checkpoint 保存和加载。
+- `cs336_basics/generation.py`、`cs336_basics/training.py`：生成和长跑训练脚手架。
 
-### 2. 先做 BPE 训练，再做 Tokenizer
+怎样测试：
 
-BPE training 的核心顺序是：
+```sh
+cd Human/assignment1-basics
+uv run pytest tests/test_train_bpe.py::test_train_bpe -q
+```
 
-1. 初始化词表：special tokens 加 256 个单 byte。
-2. 用 special token 切开语料，避免跨文档 merge。
-3. 对每段文本使用 GPT-2 regex 做 pre-tokenization。
-4. 把 pre-token 转成 byte tuple 并计数。
-5. 反复选择最高频 byte pair；频率相同选字典序更大的 pair。
-6. merge 后更新词表和 merges。
+这条测试可能仍会因为 BPE 未实现而失败，但失败点应该进入你的实现，而不是停在 adapter 的 `NotImplementedError`。
 
-检查信号：
+### 2. Task 2：实现 BPE 训练
 
-- `test_train_bpe` 对齐 reference merges。
-- `test_train_bpe_speed` 要求小语料训练速度足够快。
-- `test_train_bpe_special_tokens` 确认 special token 不参与普通 merge。
+需要写代码的文件：`Human/assignment1-basics/cs336_basics/bpe.py` 和 `Human/assignment1-basics/tests/adapters.py`。
+
+你要实现 byte-level BPE training，并让 `run_train_bpe` 调用它。注意 special token 切分、GPT-2 regex pre-tokenization、byte tuple 计数、pair 选择规则和 merge 更新。这里不要直接把逻辑写在 adapter 里，也不要为了某个 fixture 硬编码输出。
 
 常见错误：
 
@@ -119,49 +121,53 @@ BPE training 的核心顺序是：
 - tie-break 用了字典序更小的 pair。
 - 直接每轮全量扫描所有字符，速度过慢。
 
-Tokenizer 的核心顺序是：
-
-1. 读取 vocab 和 merges。
-2. 编码时先处理 special token，且重叠 special token 要优先匹配更长的。
-3. 普通文本用同一个 GPT-2 regex pre-tokenize。
-4. 对每个 pre-token 按 merge rank 反复应用最早学习到的可用 merge。
-5. 解码时把 token bytes 拼起来，再用 UTF-8 decode；非法 byte 用 replacement character。
-
-检查信号：
-
-- roundtrip 测试能还原原文。
-- GPT-2 fixture 测试能匹配 `tiktoken`。
-- `encode_iterable` 对文件流输出和一次性 encode 一致。
-
-### 3. 再按依赖顺序实现模型模块
-
-建议顺序是：
-
-1. `Linear` 和 `Embedding`：只处理参数形状、初始化和基础 forward。
-2. `RMSNorm`、`silu`、`SwiGLU`：处理逐位置变换。
-3. `softmax` 和 `scaled_dot_product_attention`：先解决数值稳定和 mask。
-4. `RoPE`：确认偶数维 pairwise rotation 和 token position broadcasting。
-5. `MultiHeadSelfAttention`：把 Q/K/V projection、split heads、RoPE、causal mask、merge heads 串起来。
-6. `TransformerBlock`：实现 pre-norm residual 结构。
-7. `TransformerLM`：token embedding、layers、final norm、LM head。
-
-每完成一个模块就跑对应测试，例如：
+怎样测试：
 
 ```sh
-uv run pytest -k test_linear
-uv run pytest -k test_rope
-uv run pytest -k test_transformer_lm
+cd Human/assignment1-basics
+uv run pytest tests/test_train_bpe.py -q
 ```
+
+### 3. Task 3：实现 Tokenizer
+
+需要写代码的文件：`Human/assignment1-basics/cs336_basics/tokenizer.py` 和 `Human/assignment1-basics/tests/adapters.py`。
+
+你要实现 vocab/merges 加载、`encode`、`encode_iterable`、`decode` 和 special token 处理。special token 要在普通 regex pre-tokenization 前处理；重叠 special token 要有稳定优先级。
+
+怎样测试：
+
+```sh
+cd Human/assignment1-basics
+uv run pytest tests/test_tokenizer.py -q
+```
+
+### 4. Task 4：实现 Transformer 模型模块
+
+需要写代码的文件：`Human/assignment1-basics/cs336_basics/model.py` 和 `Human/assignment1-basics/tests/adapters.py`。
+
+建议按依赖顺序完成：`Linear`、`Embedding`、`RMSNorm`、`silu`、`SwiGLU`、scaled dot-product attention、RoPE、multi-head self-attention、`TransformerBlock`、`TransformerLM`。每个模块都要遵守测试 adapter 给定的权重形状和输出 shape。
 
 常见错误：
 
-- `Linear` 权重方向写反。PDF 使用 row-major 权重，实际 forward 是 `x @ W.T`。
-- RoPE 只支持二维输入，没有处理任意 batch-like dimensions。
-- causal mask 方向反了，导致 token 看不到过去或能看到未来。
-- attention head reshape 后忘了转回原来的 hidden 维度。
-- final RMSNorm 漏掉，TransformerLM snapshot 会明显不匹配。
+- `Linear` 权重方向写反。
+- RoPE 只支持二维输入，没有处理 batch-like 维度。
+- causal mask 方向反了。
+- attention head reshape 后忘了转回 hidden 维。
+- final RMSNorm 漏掉。
 
-### 4. 最后实现训练工具
+怎样测试：
+
+```sh
+cd Human/assignment1-basics
+uv run pytest -k test_linear
+uv run pytest -k test_rope
+uv run pytest -k test_transformer_lm
+uv run pytest tests/test_model.py -q
+```
+
+### 5. Task 5：实现训练工具
+
+需要写代码的文件：`Human/assignment1-basics/cs336_basics/nn_utils.py`、`Human/assignment1-basics/cs336_basics/optim.py`、`Human/assignment1-basics/cs336_basics/data.py`、`Human/assignment1-basics/cs336_basics/serialization.py` 和 `Human/assignment1-basics/tests/adapters.py`。
 
 训练工具看起来简单，但容易出现数值或状态问题：
 
@@ -172,19 +178,21 @@ uv run pytest -k test_transformer_lm
 - `get_batch` 的 `y` 必须是 `x` 向右偏移一位。
 - checkpoint 必须同时保存 model、optimizer 和 iteration。
 
-验证顺序：
+怎样测试：
 
 ```sh
+cd Human/assignment1-basics
 uv run pytest tests/test_nn_utils.py
 uv run pytest tests/test_optimizer.py
 uv run pytest tests/test_data.py
 uv run pytest tests/test_serialization.py
-uv run pytest
 ```
 
-### 5. 实验部分如何继续
+### 6. Task 6：实验、训练和生成
 
-当核心测试全部通过后，再进入 PDF 第 7 节实验：
+需要写代码或脚本的文件：`Human/assignment1-basics/cs336_basics/training.py`、`Human/assignment1-basics/cs336_basics/generation.py`，以及你自己用于 TinyStories/OpenWebText 的训练入口或实验记录文件。
+
+当核心测试全部通过后，再进入 PDF 实验部分：
 
 1. 下载 TinyStories / OpenWebText。
 2. 训练对应 vocab size 的 BPE tokenizer。
@@ -194,6 +202,13 @@ uv run pytest
 6. 使用 generation 函数生成文本，再做学习率、batch size、RMSNorm、pre-norm、RoPE、SwiGLU 等实验。
 
 这里的重点是不要把“代码能跑”误认为“实验已完成”。实验交付需要真实曲线、真实生成样例和真实观察。
+
+怎样测试：
+
+```sh
+cd Human/assignment1-basics
+uv run pytest
+```
 
 ## 第三章：代码实现、逻辑与细节讲解
 

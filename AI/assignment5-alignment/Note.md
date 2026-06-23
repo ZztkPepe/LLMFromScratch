@@ -62,9 +62,11 @@ Response mask：一个布尔矩阵，标出哪些 label token 属于 response。
 
 ## 第二章：如何完成 Human 路径
 
-Human 路径建议按测试顺序做，因为每一步都依赖前一步的张量形状和 mask 语义。
+这一章只说明 Human 路径要在哪些文件写代码、每一步完成什么行为、怎样测试。建议按测试顺序做，因为每一步都依赖前一步的张量形状和 mask 语义。
 
-### 2.1 先接通 adapter
+### 1. Task 1：接通 adapter
+
+需要写代码的文件：`Human/assignment5-alignment/tests/adapters.py`，以及 `Human/assignment5-alignment/cs336_alignment/alignment.py`。如果 `alignment.py` 不存在，就在 Human 路径下创建它。
 
 README 明确说测试入口在 `tests/adapters.py`。第一步不是直接写训练 loop，而是让 adapter 调用你自己的实现模块。
 
@@ -77,7 +79,18 @@ tests/adapters.py
 
 检查信号：如果 adapter 仍然 `raise NotImplementedError`，测试会直接失败；如果 adapter 里堆满业务逻辑，后面很难调试。
 
-### 2.2 实现 prompt/output tokenization
+怎样测试：
+
+```sh
+cd Human/assignment5-alignment
+uv run pytest tests/test_grpo.py::test_tokenize_prompt_and_output -q
+```
+
+这条测试可能仍会因为 tokenization 未实现而失败，但失败点应该进入你的实现，而不是 adapter 的 `NotImplementedError`。
+
+### 2. Task 2：实现 prompt/output tokenization
+
+需要写代码的文件：`Human/assignment5-alignment/cs336_alignment/alignment.py` 和 `Human/assignment5-alignment/tests/adapters.py`。
 
 `run_tokenize_prompt_and_output` 要返回三个张量：
 
@@ -89,7 +102,16 @@ tests/adapters.py
 
 测试信号：`test_tokenize_prompt_and_output` 用 snapshot 精确比较三个张量。
 
-### 2.3 实现 response logprob 和 entropy
+怎样测试：
+
+```sh
+cd Human/assignment5-alignment
+uv run pytest tests/test_grpo.py::test_tokenize_prompt_and_output -q
+```
+
+### 3. Task 3：实现 response logprob 和 entropy
+
+需要写代码的文件：`Human/assignment5-alignment/cs336_alignment/alignment.py` 和 `Human/assignment5-alignment/tests/adapters.py`。
 
 `run_get_response_log_probs` 输入 `input_ids` 和 `labels`，调用 causal LM 得到 logits，再做：
 
@@ -106,7 +128,16 @@ entropy = -sum(p * log p)
 
 测试信号：`test_get_response_log_probs` 同时检查 `log_probs` 和 `token_entropy`。
 
-### 2.4 实现 rollout reward
+怎样测试：
+
+```sh
+cd Human/assignment5-alignment
+uv run pytest tests/test_grpo.py::test_get_response_log_probs -q
+```
+
+### 4. Task 4：实现 rollout reward
+
+需要写代码的文件：`Human/assignment5-alignment/cs336_alignment/alignment.py` 和 `Human/assignment5-alignment/tests/adapters.py`。
 
 这一步很简单，但它决定后面所有 advantage 的输入。对每个 `(response, ground_truth)` 调用 reward function，收集 `reward` 成一维 tensor，同时记录一些 mean 作为 metadata。
 
@@ -116,7 +147,16 @@ entropy = -sum(p * log p)
 - dtype 不稳定。
 - response 和 ground truth 没有按相同顺序 zip。
 
-### 2.5 实现组内 advantage
+怎样测试：
+
+```sh
+cd Human/assignment5-alignment
+uv run pytest tests/test_grpo.py::test_compute_rollout_rewards -q
+```
+
+### 5. Task 5：实现组内 advantage
+
+需要写代码的文件：`Human/assignment5-alignment/cs336_alignment/alignment.py` 和 `Human/assignment5-alignment/tests/adapters.py`。
 
 GRPO 的默认配置是：
 
@@ -132,7 +172,16 @@ advantage = (reward - group_mean) / (group_std + eps)
 
 测试信号：`test_compute_group_normalized_rewards_*` 会分别覆盖这些变体。
 
-### 2.6 实现 policy-gradient loss
+怎样测试：
+
+```sh
+cd Human/assignment5-alignment
+uv run pytest tests/test_grpo.py -k compute_group_normalized_rewards -q
+```
+
+### 6. Task 6：实现 policy-gradient loss
+
+需要写代码的文件：`Human/assignment5-alignment/cs336_alignment/alignment.py` 和 `Human/assignment5-alignment/tests/adapters.py`。
 
 on-policy 情况最直接：
 
@@ -154,7 +203,16 @@ ratio = exp(new_log_prob - old_log_prob)
 - GSPO 平均时把 prompt token 也算进去。
 - clipping 对正负 advantage 的方向处理错。用 surrogate 的 `minimum` 更不容易写反。
 
-### 2.7 实现 loss aggregation
+怎样测试：
+
+```sh
+cd Human/assignment5-alignment
+uv run pytest tests/test_grpo.py -k compute_policy_gradient_loss -q
+```
+
+### 7. Task 7：实现 loss aggregation
+
+需要写代码的文件：`Human/assignment5-alignment/cs336_alignment/alignment.py` 和 `Human/assignment5-alignment/tests/adapters.py`。
 
 测试要求两种 normalization：
 
@@ -163,7 +221,16 @@ ratio = exp(new_log_prob - old_log_prob)
 
 这一步看似小，但会影响 GRPO、Dr. GRPO、RFT 等变体的梯度尺度。
 
-### 2.8 实现 GRPO train step
+怎样测试：
+
+```sh
+cd Human/assignment5-alignment
+uv run pytest tests/test_grpo.py -k aggregate_loss_across_microbatch -q
+```
+
+### 8. Task 8：实现 GRPO train step
+
+需要写代码的文件：`Human/assignment5-alignment/cs336_alignment/alignment.py` 和 `Human/assignment5-alignment/tests/adapters.py`。
 
 完整 train step 顺序是：
 
@@ -185,7 +252,16 @@ compute raw rewards
 
 测试信号：`test_grpo_train_step_*` 会比较更新后的所有模型参数。如果 loss 只差一点点，参数 snapshot 也会失败。
 
-### 2.9 完成 optional safety/RLHF
+怎样测试：
+
+```sh
+cd Human/assignment5-alignment
+uv run pytest tests/test_grpo.py -k grpo_train_step -q
+```
+
+### 9. Task 9：完成 optional safety/RLHF
+
+需要写代码的文件：`Human/assignment5-alignment/cs336_alignment/alignment.py`、`Human/assignment5-alignment/scripts/evaluate_safety.py` 和 `Human/assignment5-alignment/tests/adapters.py`。
 
 可选部分包括：
 
@@ -196,6 +272,14 @@ compute raw rewards
 - `run_compute_per_instance_dpo_loss`：计算一个 preference pair 的 DPO loss。
 
 这些不是 README 指定的最小 `test_grpo.py`，但本地目录有测试，所以一起完成更稳。
+
+怎样测试：
+
+```sh
+cd Human/assignment5-alignment
+uv run pytest tests/test_data.py tests/test_metrics.py tests/test_dpo.py -q
+uv run pytest
+```
 
 ## 第三章：代码实现、逻辑与细节讲解
 

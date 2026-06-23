@@ -112,64 +112,61 @@ Network
 
 ## 第二章：如何完成 Human 路径
 
-这一章讲的是学生自己做作业时的路线，不直接给完整答案。建议不要一边看最终实现一边填空，而是先理解每个任务要验证什么，再写最小代码让测试通过。
+这一章只给 Human 路径的施工图：你需要在哪些文件里写代码、每个文件要完成什么行为、用哪些测试确认方向正确。这里不会展开具体实现代码；真正写作业时请在 `Human/Module-0` 下完成，而不是照抄 `AI/Module-0` 的实现。
 
 ### 1. 总体顺序
 
-建议按下面顺序完成：
+建议按下面顺序推进，每一步都先让对应测试通过，再进入下一步：
 
-1. 先完成基础数学算子。
-2. 再写性质测试。
-3. 再实现高阶函数。
-4. 再实现 `Module` 参数树。
-5. 最后做数据集说明和手工分类器可视化。
+1. 在 `Human/Module-0/minitorch/operators.py` 完成 Task 0.1 的基础算子。
+2. 在 `Human/Module-0/tests/test_operators.py` 补齐 Task 0.2 的性质测试。
+3. 回到 `Human/Module-0/minitorch/operators.py` 完成 Task 0.3 的高阶函数。
+4. 在 `Human/Module-0/minitorch/module.py` 完成 Task 0.4 的参数树和模式切换。
+5. 用 `Human/Module-0/project/run_manual.py` 观察手工分类器效果，并把需要提交的记录写进 `Human/Module-0/README.md`。
 
 不要先写 `Module`，也不要先碰可视化。因为后面的任务依赖前面的基础函数和测试习惯。
 
 ### 2. Task 0.1：基础算子
 
-这个任务要你实现一组简单数学函数。学生应该先问自己：这些函数在普通 Python 里应该等价于什么？
+需要写代码的文件：`Human/Module-0/minitorch/operators.py`。
 
-检查重点：
+你要在这个文件里完成基础标量函数，包括：
 
-- `mul(x, y)` 是否等价于 `x * y`。
-- `add(x, y)` 是否等价于 `x + y`。
-- `neg(x)` 是否等价于 `-x`。
-- `lt` 和 `eq` 是否返回作业要求的数值结果，而不是随意返回字符串或其他类型。
-- `sigmoid` 是否在大正数和大负数时仍然稳定。
-- `relu_back` 是否只在输入大于 0 时传递梯度。
+- 算术类函数：让加法、乘法、取反、取倒数等函数返回普通数值结果。
+- 比较类函数：让小于、相等、最大值这类函数返回作业要求的数值信号。
+- 非线性函数：实现 sigmoid、ReLU、log、exp 这类后续 Scalar/Tensor 会复用的函数。
+- 局部反向函数：实现 log、inv、ReLU 对应的 backward helper，让后续自动微分模块能调用。
 
-容易出错的地方：
+不要在这里写测试逻辑，也不要修改函数签名。测试会直接 import 这些函数，因此最小目标是：保留接口，只填函数体。
 
-- `sigmoid` 直接写成一种形式，遇到极端输入可能数值不稳定。
-- `log_back`、`inv_back` 的导数符号写错。
-- `relu(0)` 的边界处理不一致。测试主要关注正负两侧，但自己要知道边界处通常按 0 处理。
+验证位置：`Human/Module-0/tests/test_operators.py` 中标记为 `task0_1` 的测试。
 
-如何判断实现合理：
+检查时重点看：
 
-- 和 Python 原生结果比较。
-- 用多组随机输入测试。
-- 反向函数至少要和基础导数直觉一致。
+- 函数是否返回数字，而不是布尔值、字符串或列表。
+- 极端输入下的 sigmoid 是否仍然稳定。
+- backward helper 是否只做本函数局部梯度的事，不掺入整张计算图逻辑。
+
+怎样测试：
+
+```sh
+cd Human/Module-0
+python -m pytest tests/test_operators.py -m task0_1 -q
+```
 
 ### 3. Task 0.2：性质测试
 
-性质测试不是“举一个例子看看能不能过”。它是在问：这个函数是否长期满足某种数学规律？
+需要写代码的文件：`Human/Module-0/tests/test_operators.py`。
 
-例如乘法交换律不是只要求：
+你要补齐 Task 0.2 中带 `NotImplementedError` 的 property tests。这里不是实现库函数，而是用 Hypothesis 描述函数应该长期满足的性质。
 
-```text
-2 * 3 == 3 * 2
-```
+需要覆盖的测试意图包括：
 
-而是要求对许多不同输入都成立。
-
-学生应该重点检查：
-
-- sigmoid 输出是否总在 0 和 1 之间。
-- 小于关系是否满足传递性。
-- 乘法是否满足交换律。
-- 乘法和加法是否满足分配律。
-- 列表求和是否和逐元素相加后的求和一致。
+- sigmoid 的输出范围和基本形状。
+- 小于关系的传递性。
+- 乘法的交换性。
+- 加法和乘法之间的分配关系。
+- 列表级别的求和、逐元素相加、高阶函数组合是否一致。
 
 容易出错的地方：
 
@@ -177,22 +174,27 @@ Network
 - 忽略浮点误差，用严格相等比较所有小数。
 - 测试 sigmoid 单调性时不考虑浮点饱和。
 
-如何从现象判断：
+验证位置：同一个文件中标记为 `task0_2` 的测试。目标不是让测试“随便通过”，而是让测试真的能抓到 Task 0.1 中常见的错误实现。
 
-- 如果 Hypothesis 找到一个很小的反例，说明性质本身或实现有问题。
-- 如果失败只发生在极端大数附近，先考虑浮点精度，而不是马上改数学定义。
+如果 Hypothesis 给出反例，先判断是性质写错、浮点容差不合理，还是 `operators.py` 的函数行为确实有问题。
+
+怎样测试：
+
+```sh
+cd Human/Module-0
+python -m pytest tests/test_operators.py -m task0_2 -q
+```
 
 ### 4. Task 0.3：高阶函数
 
-这一部分不是为了炫技，而是让学生理解“函数也可以作为输入”。后面 MiniTorch 会大量使用这种思想：把一个小函数传给一个通用执行器，让执行器负责遍历数据。
+需要写代码的文件：`Human/Module-0/minitorch/operators.py`。
 
-思考路线：
+你要在这个文件里完成两层内容：
 
-1. `map` 解决“对每个元素做同一件事”。
-2. `zipWith` 解决“两个列表按位置配对后做同一件事”。
-3. `reduce` 解决“把一组值折叠成一个值”。
+1. 通用高阶函数：`map`、`zipWith`、`reduce`。
+2. 由高阶函数组合出来的列表工具：`negList`、`addLists`、`sum`、`prod`。
 
-不要先想着 `negList`、`addLists`、`sum`、`prod` 怎么写。应该先想：这些是不是都能由上面三个通用工具组合出来？
+这里的重点是让通用函数承担遍历责任，具体算子只作为参数传进去。不要为每个列表工具单独写一套循环逻辑；那样虽然可能过一两个例子，但会绕开本任务真正要练的抽象。
 
 容易出错的地方：
 
@@ -200,26 +202,25 @@ Network
 - `zipWith` 没有按位置配对。
 - `map` 返回的不是新列表，而是修改原列表导致副作用。
 
-### 5. Task 0.4：Module 和 Parameter
+验证位置：`Human/Module-0/tests/test_operators.py` 中标记为 `task0_3` 的测试。
 
-这个任务要实现一个能递归管理参数的模块系统。学生可以先画树：
+怎样测试：
 
-```text
-root
-  p1
-  child_a
-    p2
-  child_b
-    child_c
-      p3
+```sh
+cd Human/Module-0
+python -m pytest tests/test_operators.py -m task0_3 -q
 ```
 
-你要能回答：
+### 5. Task 0.4：Module 和 Parameter
 
-- 顶层模块有哪些直接子模块？
-- 所有参数加起来有哪些？
-- 参数名字如何带上路径？
-- 调用 `eval()` 时，子模块状态是否也改变？
+需要写代码的文件：`Human/Module-0/minitorch/module.py`。
+
+你要完成 `Module` 对参数和子模块的递归管理。具体工作包括：
+
+- `train()`：把当前模块和所有子模块切到训练模式。
+- `eval()`：把当前模块和所有子模块切到评估模式。
+- `parameters()`：收集当前模块和所有后代模块中的 `Parameter`。
+- `named_parameters()`：收集参数时保留层级路径，避免重名参数混在一起。
 
 容易出错的地方：
 
@@ -228,29 +229,38 @@ root
 - `train()` 和 `eval()` 只改当前节点，不改子节点。
 - 把普通属性误当参数，或者把参数没有放进 `_parameters`。
 
-测试现象：
+验证位置：`Human/Module-0/tests/test_module.py` 中标记为 `task0_4` 的测试。
 
-- 如果 `named_parameters()` 缺路径，测试会找不到 `a.p2` 或 `b.c.p3`。
-- 如果递归漏了，参数数量会比预期少。
-- 如果模式切换不递归，子模块的 `training` 状态会不一致。
+调试时可以用 `Human/Module-0/project/module_interface.py` 的可视化理解模块树，但真正要改的核心文件仍然是 `minitorch/module.py`。
+
+怎样测试：
+
+```sh
+cd Human/Module-0
+python -m pytest tests/test_module.py -m task0_4 -q
+```
 
 ### 6. Task 0.5：数据集和手工分类器
 
-这一部分让学生第一次把“函数”连接到“分类任务”。Simple 数据集的规则是：点在某条竖线左边是一类，右边是另一类。
+主要查看和记录的文件：`Human/Module-0/project/run_manual.py`、`Human/Module-0/minitorch/datasets.py`、`Human/Module-0/README.md`。
 
-学生应该先理解：
+这一节通常不是继续补核心库的 `NotImplementedError`，而是把前面写好的函数和模块系统放到一个手工分类器里观察。你需要做的是：
 
-- 输入是二维点 `(x0, x1)`。
-- 输出是类别 `0` 或 `1`。
-- 手工分类器本质是设置一条分割线。
+- 阅读 `Human/Module-0/minitorch/datasets.py`，确认 Simple 数据集的标签规则。
+- 运行或观察 `Human/Module-0/project/run_manual.py`，理解 `Network`、`Linear` 和手工参数如何形成一条分类边界。
+- 在 `Human/Module-0/README.md` 记录你用于 Simple 数据集的参数或截图信息，确保结果可复现。
 
-检查重点：
+不要在 `datasets.py` 里改标签规则来迁就模型，也不要把可视化结果当成核心库实现的一部分。这个任务的重点是解释和记录：你用了哪些参数，为什么图像能对应数据规则。
 
-- README 中是否记录了参数。
-- 图和参数是否一致。
-- 数据集函数的 docstring 是否说明了标签规则。
+验证位置：本节更多依赖人工检查和 README 记录；前四个 Task 的自动测试通过后，再做这一节才有意义。
 
-不要把可视化看成装饰。它的作用是帮助你确认模型的输出区域是否和数据标签规则一致。
+怎样测试：
+
+```sh
+cd Human/Module-0
+python -m pytest tests/test_operators.py tests/test_module.py -q
+streamlit run project/app.py 0
+```
 
 ## 第三章：代码实现、逻辑与细节讲解
 
