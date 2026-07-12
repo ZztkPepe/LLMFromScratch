@@ -103,7 +103,7 @@ FSDP 更进一步：不仅 optimizer state 分片，参数和梯度也分片。�
 
 ### 1. Task 1：接通环境和 adapters
 
-需要写代码的文件：`Human/assignment2-systems/tests/adapters.py`，以及 `Human/assignment2-systems/cs336_systems/` 下的实现模块。
+需要写代码的文件：`Human/4_distributed_systems/tests/adapters.py`，以及 `Human/4_distributed_systems/cs336_systems/` 下的实现模块。
 
 Assignment2 使用 `cs336-basics/` 里的 Assignment1 实现作为模型依赖。先确认：
 
@@ -125,13 +125,13 @@ uv run python
 怎样测试：
 
 ```sh
-cd Human/assignment2-systems
+cd Human/4_distributed_systems
 uv run python -c "import cs336_basics, cs336_systems; print('ok')"
 ```
 
 ### 2. Task 2：完成 FlashAttention correctness path
 
-需要写代码的文件：`Human/assignment2-systems/cs336_systems/attention.py` 和 `Human/assignment2-systems/tests/adapters.py`。
+需要写代码的文件：`Human/4_distributed_systems/cs336_systems/attention.py` 和 `Human/4_distributed_systems/tests/adapters.py`。
 
 先写纯 PyTorch 的 `torch.autograd.Function`，不要急着写 Triton。forward 应该计算：
 
@@ -169,13 +169,13 @@ uv run pytest tests/test_attention.py
 怎样测试：
 
 ```sh
-cd Human/assignment2-systems
+cd Human/4_distributed_systems
 uv run pytest tests/test_attention.py -q
 ```
 
 ### 3. Task 3：完成 DDP
 
-需要写代码的文件：`Human/assignment2-systems/cs336_systems/parallel.py` 和 `Human/assignment2-systems/tests/adapters.py`。
+需要写代码的文件：`Human/4_distributed_systems/cs336_systems/parallel.py` 和 `Human/4_distributed_systems/tests/adapters.py`。
 
 DDP 的最小正确版本必须做两件事：
 
@@ -208,13 +208,13 @@ uv run pytest tests/test_ddp.py
 怎样测试：
 
 ```sh
-cd Human/assignment2-systems
+cd Human/4_distributed_systems
 uv run pytest tests/test_ddp.py -q
 ```
 
 ### 4. Task 4：完成 sharded optimizer
 
-需要写代码的文件：`Human/assignment2-systems/cs336_systems/parallel.py` 和 `Human/assignment2-systems/tests/adapters.py`。
+需要写代码的文件：`Human/4_distributed_systems/cs336_systems/parallel.py` 和 `Human/4_distributed_systems/tests/adapters.py`。
 
 Sharded optimizer 的关键是“谁负责更新哪个参数”。一个简单稳定的策略是按参数顺序分配：
 
@@ -240,13 +240,13 @@ uv run pytest tests/test_sharded_optimizer.py
 怎样测试：
 
 ```sh
-cd Human/assignment2-systems
+cd Human/4_distributed_systems
 uv run pytest tests/test_sharded_optimizer.py -q
 ```
 
 ### 5. Task 5：完成 FSDP correctness path
 
-需要写代码的文件：`Human/assignment2-systems/cs336_systems/parallel.py` 和 `Human/assignment2-systems/tests/adapters.py`。
+需要写代码的文件：`Human/4_distributed_systems/cs336_systems/parallel.py` 和 `Human/4_distributed_systems/tests/adapters.py`。
 
 FSDP 的完整生产实现很复杂：真实参数分片、前向 all-gather、反向 all-gather、梯度 reduce-scatter、预取、释放 full weights、mixed precision。Human 路径建议先实现测试要求的 correctness path：
 
@@ -271,13 +271,13 @@ uv run pytest tests/test_fsdp.py
 怎样测试：
 
 ```sh
-cd Human/assignment2-systems
+cd Human/4_distributed_systems
 uv run pytest tests/test_fsdp.py -q
 ```
 
 ### 6. Task 6：性能实验和 written deliverables
 
-需要写代码或实验记录的文件：`Human/assignment2-systems/benchmark.py`，以及你的 profiling 记录和 written deliverables。
+需要写代码或实验记录的文件：`Human/4_distributed_systems/benchmark.py`，以及你的 profiling 记录和 written deliverables。
 
 核心测试通过后，再进入 PDF 里需要 GPU 的实验：
 
@@ -292,10 +292,28 @@ uv run pytest tests/test_fsdp.py -q
 怎样测试：
 
 ```sh
-cd Human/assignment2-systems
+cd Human/4_distributed_systems
 uv run pytest
 uv run python benchmark.py --model-size small --mode forward
 ```
+
+### 7. 全面验收：确认整个 Assignment 2 已完成
+
+先在干净环境检查 adapters、完整 correctness suite 和静态质量：
+
+```sh
+cd Human/4_distributed_systems
+uv sync
+rg -n 'raise NotImplementedError' tests/adapters.py
+uv run pytest -q
+uv run ruff check cs336_systems tests
+```
+
+adapter 不应再有占位实现。CPU 环境下要确保 FlashAttention reference、DDP、sharded optimizer 和 FSDP correctness 测试通过；多进程测试不得 hang，也不能留下孤立进程。pytest 的 `skip` 必须逐项核对，CPU 上因没有 CUDA 而跳过的 Triton 测试不能被视为已经验证。
+
+真正的全面验收还必须在 CUDA 环境重跑 `tests/test_attention.py`，确认 Triton forward/backward、causal/non-causal 和数值容差全部通过，并在多 GPU 环境重跑 DDP/FSDP。随后完成 `benchmark.py` 的 forward、backward 和 full-step 基准，使用 Nsight 与显存工具保存原始数据，比较 DDP、overlap、optimizer sharding 和 FSDP，而不是只写主观结论。
+
+只有 CPU correctness、CUDA/Triton、多 GPU correctness、无死锁运行、性能数据和 written deliverables 全部通过，才算 Assignment 2 完成；本机 pytest 全绿但 CUDA 测试被跳过，只能算本地部分验收完成。
 
 ## 第三章：代码实现、逻辑与细节讲解
 

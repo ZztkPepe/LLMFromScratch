@@ -81,11 +81,11 @@ PDF 后半部分还要求 TinyStories、OpenWebText、消融实验和 leaderboar
 
 ## 第二章：如何完成 Human 路径
 
-这一章只说明 Human 路径要在哪些文件写代码、每一步完成什么行为、怎样测试。不要把具体实现写进笔记里；真正作业代码应写在 `Human/assignment1-basics` 下，`tests/adapters.py` 只做薄适配。
+这一章只说明 Human 路径要在哪些文件写代码、每一步完成什么行为、怎样测试。不要把具体实现写进笔记里；真正作业代码应写在 `Human/3_transformer_basics` 下，`tests/adapters.py` 只做薄适配。
 
 ### 1. Task 1：接通测试适配层
 
-需要写代码的文件：`Human/assignment1-basics/tests/adapters.py`，以及你在 `Human/assignment1-basics/cs336_basics/` 下创建或补齐的实现模块。
+需要写代码的文件：`Human/3_transformer_basics/tests/adapters.py`，以及你在 `Human/3_transformer_basics/cs336_basics/` 下创建或补齐的实现模块。
 
 先读 `cs336_assignment1_basics.pdf` 和 `tests/adapters.py`。测试只通过 `run_*` adapter 调你的代码，所以第一步是决定实现模块边界，然后让 adapter 转发到这些模块。adapter 不应该承载 BPE、模型、优化器等业务逻辑。
 
@@ -103,7 +103,7 @@ PDF 后半部分还要求 TinyStories、OpenWebText、消融实验和 leaderboar
 怎样测试：
 
 ```sh
-cd Human/assignment1-basics
+cd Human/3_transformer_basics
 uv run pytest tests/test_train_bpe.py::test_train_bpe -q
 ```
 
@@ -111,7 +111,7 @@ uv run pytest tests/test_train_bpe.py::test_train_bpe -q
 
 ### 2. Task 2：实现 BPE 训练
 
-需要写代码的文件：`Human/assignment1-basics/cs336_basics/bpe.py` 和 `Human/assignment1-basics/tests/adapters.py`。
+需要写代码的文件：`Human/3_transformer_basics/cs336_basics/bpe.py` 和 `Human/3_transformer_basics/tests/adapters.py`。
 
 你要实现 byte-level BPE training，并让 `run_train_bpe` 调用它。注意 special token 切分、GPT-2 regex pre-tokenization、byte tuple 计数、pair 选择规则和 merge 更新。这里不要直接把逻辑写在 adapter 里，也不要为了某个 fixture 硬编码输出。
 
@@ -124,26 +124,26 @@ uv run pytest tests/test_train_bpe.py::test_train_bpe -q
 怎样测试：
 
 ```sh
-cd Human/assignment1-basics
+cd Human/3_transformer_basics
 uv run pytest tests/test_train_bpe.py -q
 ```
 
 ### 3. Task 3：实现 Tokenizer
 
-需要写代码的文件：`Human/assignment1-basics/cs336_basics/tokenizer.py` 和 `Human/assignment1-basics/tests/adapters.py`。
+需要写代码的文件：`Human/3_transformer_basics/cs336_basics/tokenizer.py` 和 `Human/3_transformer_basics/tests/adapters.py`。
 
 你要实现 vocab/merges 加载、`encode`、`encode_iterable`、`decode` 和 special token 处理。special token 要在普通 regex pre-tokenization 前处理；重叠 special token 要有稳定优先级。
 
 怎样测试：
 
 ```sh
-cd Human/assignment1-basics
+cd Human/3_transformer_basics
 uv run pytest tests/test_tokenizer.py -q
 ```
 
 ### 4. Task 4：实现 Transformer 模型模块
 
-需要写代码的文件：`Human/assignment1-basics/cs336_basics/model.py` 和 `Human/assignment1-basics/tests/adapters.py`。
+需要写代码的文件：`Human/3_transformer_basics/cs336_basics/model.py` 和 `Human/3_transformer_basics/tests/adapters.py`。
 
 建议按依赖顺序完成：`Linear`、`Embedding`、`RMSNorm`、`silu`、`SwiGLU`、scaled dot-product attention、RoPE、multi-head self-attention、`TransformerBlock`、`TransformerLM`。每个模块都要遵守测试 adapter 给定的权重形状和输出 shape。
 
@@ -158,7 +158,7 @@ uv run pytest tests/test_tokenizer.py -q
 怎样测试：
 
 ```sh
-cd Human/assignment1-basics
+cd Human/3_transformer_basics
 uv run pytest -k test_linear
 uv run pytest -k test_rope
 uv run pytest -k test_transformer_lm
@@ -167,7 +167,7 @@ uv run pytest tests/test_model.py -q
 
 ### 5. Task 5：实现训练工具
 
-需要写代码的文件：`Human/assignment1-basics/cs336_basics/nn_utils.py`、`Human/assignment1-basics/cs336_basics/optim.py`、`Human/assignment1-basics/cs336_basics/data.py`、`Human/assignment1-basics/cs336_basics/serialization.py` 和 `Human/assignment1-basics/tests/adapters.py`。
+需要写代码的文件：`Human/3_transformer_basics/cs336_basics/nn_utils.py`、`Human/3_transformer_basics/cs336_basics/optim.py`、`Human/3_transformer_basics/cs336_basics/data.py`、`Human/3_transformer_basics/cs336_basics/serialization.py` 和 `Human/3_transformer_basics/tests/adapters.py`。
 
 训练工具看起来简单，但容易出现数值或状态问题：
 
@@ -181,7 +181,7 @@ uv run pytest tests/test_model.py -q
 怎样测试：
 
 ```sh
-cd Human/assignment1-basics
+cd Human/3_transformer_basics
 uv run pytest tests/test_nn_utils.py
 uv run pytest tests/test_optimizer.py
 uv run pytest tests/test_data.py
@@ -190,7 +190,7 @@ uv run pytest tests/test_serialization.py
 
 ### 6. Task 6：实验、训练和生成
 
-需要写代码或脚本的文件：`Human/assignment1-basics/cs336_basics/training.py`、`Human/assignment1-basics/cs336_basics/generation.py`，以及你自己用于 TinyStories/OpenWebText 的训练入口或实验记录文件。
+需要写代码或脚本的文件：`Human/3_transformer_basics/cs336_basics/training.py`、`Human/3_transformer_basics/cs336_basics/generation.py`，以及你自己用于 TinyStories/OpenWebText 的训练入口或实验记录文件。
 
 当核心测试全部通过后，再进入 PDF 实验部分：
 
@@ -206,9 +206,27 @@ uv run pytest tests/test_serialization.py
 怎样测试：
 
 ```sh
-cd Human/assignment1-basics
+cd Human/3_transformer_basics
 uv run pytest
 ```
+
+### 7. 全面验收：确认整个 Assignment 1 已完成
+
+先从锁定依赖的干净环境开始，确认 adapters 已全部接到你自己的实现，再运行完整测试和静态检查：
+
+```sh
+cd Human/3_transformer_basics
+uv sync
+rg -n 'raise NotImplementedError' tests/adapters.py
+uv run pytest -q
+uv run ruff check cs336_basics tests
+```
+
+`tests/adapters.py` 中不应再有待实现的 adapter；完整 pytest 必须一次性通过，而不是只通过若干 `-k` 子集。macOS 上因平台条件跳过的 Linux `rlimit` 测试应记录原因；若要做严格跨平台验收，还需在 Linux 重跑这些测试。
+
+自动测试之外，再做一次最小端到端流程：用小语料训练 BPE，保存并重新加载 tokenizer，检查 encode/decode；用极小 token 数据完成若干训练 step，保存 checkpoint，恢复后继续训练，并用恢复的模型生成文本。确认 loss 有限、checkpoint 中 model/optimizer/iteration 齐全、恢复前后状态连续。
+
+最后核对作业要求的 TinyStories/OpenWebText 实验、训练/验证曲线、运行时间、生成样例和消融结论都来自真实运行并已记录。只有 adapters、全套测试、静态检查、端到端 smoke test 和实验交付物都齐全，才算 Assignment 1 完成。
 
 ## 第三章：代码实现、逻辑与细节讲解
 

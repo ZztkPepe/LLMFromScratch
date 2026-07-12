@@ -63,7 +63,7 @@ MinHash / LSH：大规模近似去重常用技术。MinHash 用短签名近似 J
 
 ### 1. Task 1：接通测试适配层
 
-需要写代码的文件：`Human/assignment4-data/tests/adapters.py`，以及你在 `Human/assignment4-data/cs336_data/` 下创建或补齐的实现模块。
+需要写代码的文件：`Human/6_data_pipeline/tests/adapters.py`，以及你在 `Human/6_data_pipeline/cs336_data/` 下创建或补齐的实现模块。
 
 测试不会直接猜你的函数名，而是调用 `tests/adapters.py` 中的 `run_*` 函数。因此第一步是决定实现模块的位置，然后让 adapter 做薄转发。
 
@@ -80,7 +80,7 @@ tests/adapters.py
 怎样测试：
 
 ```sh
-cd Human/assignment4-data
+cd Human/6_data_pipeline
 uv run pytest tests/test_extract.py -q
 ```
 
@@ -88,7 +88,7 @@ uv run pytest tests/test_extract.py -q
 
 ### 2. Task 2：HTML 正文抽取
 
-需要写代码的文件：`Human/assignment4-data/cs336_data/processing.py` 和 `Human/assignment4-data/tests/adapters.py`。
+需要写代码的文件：`Human/6_data_pipeline/cs336_data/processing.py` 和 `Human/6_data_pipeline/tests/adapters.py`。
 
 先用 `tests/fixtures/moby.html` 和 `moby_extracted.txt` 做逐字对比。不要手写一堆正则解析 HTML；这类任务应该使用 HTML parser 或正文抽取库。
 
@@ -103,13 +103,13 @@ uv run pytest tests/test_extract.py -q
 怎样测试：
 
 ```sh
-cd Human/assignment4-data
+cd Human/6_data_pipeline
 uv run pytest tests/test_extract.py -q
 ```
 
 ### 3. Task 3：语言识别
 
-需要写代码的文件：`Human/assignment4-data/cs336_data/processing.py`、`Human/assignment4-data/cs336_data/wet_files.py` 和 `Human/assignment4-data/tests/adapters.py`。
+需要写代码的文件：`Human/6_data_pipeline/cs336_data/processing.py`、`Human/6_data_pipeline/cs336_data/wet_files.py` 和 `Human/6_data_pipeline/tests/adapters.py`。
 
 作业下载脚本会下载 fastText 的 `lid.176.bin`。真实数据处理时应该优先用这个模型，并用概率阈值决定是否保留英文。
 
@@ -124,13 +124,13 @@ uv run pytest tests/test_extract.py -q
 怎样测试：
 
 ```sh
-cd Human/assignment4-data
+cd Human/6_data_pipeline
 uv run pytest tests/test_langid.py -q
 ```
 
 ### 4. Task 4：PII masking
 
-需要写代码的文件：`Human/assignment4-data/cs336_data/processing.py` 和 `Human/assignment4-data/tests/adapters.py`。
+需要写代码的文件：`Human/6_data_pipeline/cs336_data/processing.py` 和 `Human/6_data_pipeline/tests/adapters.py`。
 
 PII masking 的重点是“替换并计数”。每个函数都应该返回：
 
@@ -153,13 +153,13 @@ PII masking 的重点是“替换并计数”。每个函数都应该返回：
 怎样测试：
 
 ```sh
-cd Human/assignment4-data
+cd Human/6_data_pipeline
 uv run pytest tests/test_pii.py -q
 ```
 
 ### 5. Task 5：有害内容与质量分类
 
-需要写代码的文件：`Human/assignment4-data/cs336_data/processing.py` 和 `Human/assignment4-data/tests/adapters.py`。
+需要写代码的文件：`Human/6_data_pipeline/cs336_data/processing.py` 和 `Human/6_data_pipeline/tests/adapters.py`。
 
 真实系统可以使用下载的 fastText 分类器。本地实现保留这个入口：模型文件存在时加载模型；模型不存在时使用关键词和结构规则兜底。
 
@@ -175,13 +175,13 @@ Human 实现时要先区分两个目标：
 怎样测试：
 
 ```sh
-cd Human/assignment4-data
+cd Human/6_data_pipeline
 uv run pytest tests/test_toxicity.py tests/test_quality.py::test_classify_quality -q
 ```
 
 ### 6. Task 6：Gopher 质量规则
 
-需要写代码的文件：`Human/assignment4-data/cs336_data/processing.py` 和 `Human/assignment4-data/tests/adapters.py`。
+需要写代码的文件：`Human/6_data_pipeline/cs336_data/processing.py` 和 `Human/6_data_pipeline/tests/adapters.py`。
 
 Gopher 规则适合按“先解析统计量，再依次判断”的方式写。不要把所有条件挤进一个大表达式，否则调试会很痛苦。
 
@@ -197,13 +197,13 @@ Gopher 规则适合按“先解析统计量，再依次判断”的方式写。�
 怎样测试：
 
 ```sh
-cd Human/assignment4-data
+cd Human/6_data_pipeline
 uv run pytest tests/test_quality.py -q
 ```
 
 ### 7. Task 7：去重
 
-需要写代码的文件：`Human/assignment4-data/cs336_data/deduplication.py` 和 `Human/assignment4-data/tests/adapters.py`。
+需要写代码的文件：`Human/6_data_pipeline/cs336_data/deduplication.py` 和 `Human/6_data_pipeline/tests/adapters.py`。
 
 精确行去重的含义是：如果某一整行在整个输入集合中出现超过一次，就从所有文档里删除这行。测试中的导航行 `- home`、`- menu` 就是这种情况。
 
@@ -219,13 +219,13 @@ uv run pytest tests/test_quality.py -q
 怎样测试：
 
 ```sh
-cd Human/assignment4-data
+cd Human/6_data_pipeline
 uv run pytest tests/test_deduplication.py -q
 ```
 
 ### 8. Task 8：真实数据和训练
 
-需要使用或更新的文件：`Human/assignment4-data/scripts/download_data.py`、`Human/assignment4-data/scripts/train.py`、`Human/assignment4-data/configs/experiment/your_data.yaml` 和你的实验记录。
+需要使用或更新的文件：`Human/6_data_pipeline/scripts/download_data.py`、`Human/6_data_pipeline/scripts/train.py`、`Human/6_data_pipeline/configs/experiment/your_data.yaml` 和你的实验记录。
 
 单元测试通过后，再考虑下载数据和训练：
 
@@ -250,10 +250,29 @@ uv run modal run scripts/train.py --train-bin /root/data/your_data.bin
 怎样测试：
 
 ```sh
-cd Human/assignment4-data
+cd Human/6_data_pipeline
 uv run pytest
 uv run scripts/download_data.py --offline-only
 ```
+
+### 9. 全面验收：确认整个 Assignment 4 已完成
+
+先验证所有 adapter 和纯函数行为，再做真实数据管线验收：
+
+```sh
+cd Human/6_data_pipeline
+uv sync
+rg -n 'raise NotImplementedError' tests/adapters.py
+uv run pytest -q
+uv run python -m compileall -q cs336_data tests scripts
+uv run scripts/download_data.py --offline-only
+```
+
+adapter 不应再有占位实现；完整 pytest 必须一次性覆盖 HTML 抽取、langid、PII、toxicity、质量规则和去重。offline-only 下载应可重复运行，不能破坏已有文件，也不能依赖未声明的本地状态。
+
+接着对一小批真实 WARC/WET 文档跑完整管线，逐阶段记录输入/保留/过滤数量，并人工抽查：HTML 正文没有明显模板污染，语言阈值符合要求，email/phone/IP 被 mask，有害和低质量样本被正确处理，精确与近似去重不会大量误删。输出中不能泄露抽查到的 PII，重复运行同一输入应得到一致结果。
+
+最后才在真实数据上 tokenization 和训练，确认生成的 `.bin`/metadata 可被训练脚本读取、训练 loss 有限且总体下降，并保存数据统计、过滤比例、训练曲线和配置。Modal/full-data 步骤需要真实身份与远端资源；只通过单元测试和 offline-only 下载，不能算整个 Assignment 4 完成。
 
 ## 第三章：代码实现、逻辑与细节讲解
 

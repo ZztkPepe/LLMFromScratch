@@ -165,32 +165,65 @@ Module 1 实现的是同样思想的标量版本。它没有 Tensor 的多维数
 
 ## 第二章：如何完成 Human 路径
 
-这一章只说明 Human 路径要在哪些文件里写什么，不直接给出实现代码。所有实际作业代码都应写在 `Human/Module-1` 下；`AI/Module-1` 只能作为完成后的阅读材料，不建议边看边抄。
+这一章只说明 Human 路径要在哪些文件里写什么，不直接给出实现代码。所有实际作业代码都应写在 `Human/1_autodiff` 下；`Answer/1_autodiff` 只能作为完成后的阅读材料，不建议边看边抄。
 
 ### 1. 总体路线
 
-开始前先处理前置条件：`Human/Module-1` 依赖 Module 0 的实现。如果 `Human/Module-1/minitorch/operators.py`、`Human/Module-1/minitorch/module.py`、`Human/Module-1/tests/test_operators.py`、`Human/Module-1/tests/test_module.py` 仍然是“Need to include this file from past assignment”，先把你自己在 `Human/Module-0` 完成的版本同步过来，再做 Module 1。
+开始前先处理前置条件：`Human/1_autodiff` 依赖 Module 0 的实现。如果 `Human/1_autodiff/minitorch/operators.py`、`Human/1_autodiff/minitorch/module.py`、`Human/1_autodiff/tests/test_operators.py`、`Human/1_autodiff/tests/test_module.py` 仍然是“Need to include this file from past assignment”，先把你自己在 `Human/0_torch_basics` 完成的版本同步过来，再做 Module 1。
+
+#### 一键同步 Module 0
+
+不需要逐个复制函数。`Human/1_autodiff/sync_previous_module.py` 会读取同目录下的 `files_to_sync.txt`，把 Module 1 明确依赖的完整文件从相邻的 `Human/0_torch_basics` 复制过来。复制完整文件可以同时保留 imports、类型声明、测试和辅助逻辑，避免只复制函数时漏掉依赖。
+
+先预览将被覆盖的文件：
+
+```sh
+cd Human/1_autodiff
+python sync_previous_module.py --dry-run
+```
+
+确认清单正确后执行真实同步：
+
+```sh
+python sync_previous_module.py
+```
+
+默认会同步以下文件：
+
+- `minitorch/operators.py`
+- `minitorch/module.py`
+- `tests/test_module.py`
+- `tests/test_operators.py`
+- `project/run_manual.py`
+
+脚本会先检查所有源文件是否存在；只要缺少一个，就会在复制前停止，避免只同步一半。真实同步会覆盖 Module 1 中的同名文件，因此应先确认 Module 0 已完成并通过测试，同时提交或备份 Module 1 中需要保留的修改。
+
+如果目录不使用默认名称，也可以显式指定源和目标；相对路径按 `Human` 目录解析：
+
+```sh
+python sync_previous_module.py 0_torch_basics 1_autodiff
+```
 
 建议按下面顺序推进：
 
-1. 在 `Human/Module-1/minitorch/autodiff.py` 完成 `central_difference`。
-2. 在 `Human/Module-1/minitorch/scalar.py` 和 `Human/Module-1/minitorch/scalar_functions.py` 完成 Scalar 的前向运算。
-3. 在 `Human/Module-1/minitorch/scalar.py` 完成 `chain_rule`。
-4. 在 `Human/Module-1/minitorch/autodiff.py` 完成拓扑排序和整图反向传播。
-5. 在 `Human/Module-1/minitorch/scalar_functions.py` 补齐各个 ScalarFunction 的 backward。
-6. 在 `Human/Module-1/project/run_scalar.py` 完成三层 Scalar 网络和线性层 forward。
+1. 在 `Human/1_autodiff/minitorch/autodiff.py` 完成 `central_difference`。
+2. 在 `Human/1_autodiff/minitorch/scalar.py` 和 `Human/1_autodiff/minitorch/scalar_functions.py` 完成 Scalar 的前向运算。
+3. 在 `Human/1_autodiff/minitorch/scalar.py` 完成 `chain_rule`。
+4. 在 `Human/1_autodiff/minitorch/autodiff.py` 完成拓扑排序和整图反向传播。
+5. 在 `Human/1_autodiff/minitorch/scalar_functions.py` 补齐各个 ScalarFunction 的 backward。
+6. 在 `Human/1_autodiff/project/run_scalar.py` 完成三层 Scalar 网络和线性层 forward。
 
 不要一开始就写训练。训练失败时很难判断问题在网络、优化器、forward，还是 backward。应该先让最小自动微分系统通过测试。
 
 ### 2. Task 1.1：中心差分
 
-需要写代码的文件：`Human/Module-1/minitorch/autodiff.py`。
+需要写代码的文件：`Human/1_autodiff/minitorch/autodiff.py`。
 
 你要完成 `central_difference`，让它能对任意一个指定参数位置做数值导数近似。这个函数后面会被 `derivative_check` 用来检查自动微分结果。
 
 写这部分时只关心数值检查工具本身，不要引入计算图、`ScalarHistory` 或 backward 逻辑。
 
-验证位置：`Human/Module-1/tests/test_scalar.py` 中标记为 `task1_1` 的测试。
+验证位置：`Human/1_autodiff/tests/test_scalar.py` 中标记为 `task1_1` 的测试。
 
 容易出错的地方：
 
@@ -201,13 +234,13 @@ Module 1 实现的是同样思想的标量版本。它没有 Tensor 的多维数
 怎样测试：
 
 ```sh
-cd Human/Module-1
+cd Human/1_autodiff
 python -m pytest tests/test_scalar.py -m task1_1 -q
 ```
 
 ### 3. Task 1.2：Scalar 前向计算
 
-需要写代码的文件：`Human/Module-1/minitorch/scalar.py`、`Human/Module-1/minitorch/scalar_functions.py`。
+需要写代码的文件：`Human/1_autodiff/minitorch/scalar.py`、`Human/1_autodiff/minitorch/scalar_functions.py`。
 
 在 `scalar.py` 中，你要补齐 `Scalar` 的用户接口：
 
@@ -217,7 +250,7 @@ python -m pytest tests/test_scalar.py -m task1_1 -q
 
 在 `scalar_functions.py` 中，你要补齐各个 `ScalarFunction.forward`，让 `ScalarFunction.apply` 能创建带 history 的新 `Scalar`。这里不要绕过 `apply` 直接返回 float；否则 forward 数值看起来对，后面 backward 会没有计算历史。
 
-验证位置：`Human/Module-1/tests/test_scalar.py` 中标记为 `task1_2` 的测试。
+验证位置：`Human/1_autodiff/tests/test_scalar.py` 中标记为 `task1_2` 的测试。
 
 容易出错的地方：
 
@@ -228,13 +261,13 @@ python -m pytest tests/test_scalar.py -m task1_1 -q
 怎样测试：
 
 ```sh
-cd Human/Module-1
+cd Human/1_autodiff
 python -m pytest tests/test_scalar.py -m task1_2 -q
 ```
 
 ### 4. Task 1.3：单节点链式法则
 
-需要写代码的文件：`Human/Module-1/minitorch/scalar.py`。
+需要写代码的文件：`Human/1_autodiff/minitorch/scalar.py`。
 
 你要完成 `Scalar.chain_rule`。它只负责一个节点：从当前节点的 `history` 找到最后一个函数、上下文和输入变量，调用该函数的 backward，再把每个非 constant 输入和对应梯度配对返回。
 
@@ -246,18 +279,18 @@ python -m pytest tests/test_scalar.py -m task1_2 -q
 - 常量输入不需要累积梯度。
 - 返回的是一组 `(变量, 梯度)`。
 
-验证位置：`Human/Module-1/tests/test_autodiff.py` 中标记为 `task1_3` 的测试。
+验证位置：`Human/1_autodiff/tests/test_autodiff.py` 中标记为 `task1_3` 的测试。
 
 怎样测试：
 
 ```sh
-cd Human/Module-1
+cd Human/1_autodiff
 python -m pytest tests/test_autodiff.py -m task1_3 -q
 ```
 
 ### 5. Task 1.4：整张图的反向传播
 
-需要写代码的文件：`Human/Module-1/minitorch/autodiff.py`、`Human/Module-1/minitorch/scalar_functions.py`。
+需要写代码的文件：`Human/1_autodiff/minitorch/autodiff.py`、`Human/1_autodiff/minitorch/scalar_functions.py`。
 
 在 `autodiff.py` 中，你要完成：
 
@@ -275,19 +308,19 @@ python -m pytest tests/test_autodiff.py -m task1_3 -q
 
 验证位置：
 
-- `Human/Module-1/tests/test_autodiff.py` 中标记为 `task1_4` 的反向传播结构测试。
-- `Human/Module-1/tests/test_scalar.py` 中标记为 `task1_4` 的导数检查测试。
+- `Human/1_autodiff/tests/test_autodiff.py` 中标记为 `task1_4` 的反向传播结构测试。
+- `Human/1_autodiff/tests/test_scalar.py` 中标记为 `task1_4` 的导数检查测试。
 
 怎样测试：
 
 ```sh
-cd Human/Module-1
+cd Human/1_autodiff
 python -m pytest tests/test_autodiff.py tests/test_scalar.py -m task1_4 -q
 ```
 
 ### 6. ScalarFunction 的 backward 工作边界
 
-需要写代码的文件：`Human/Module-1/minitorch/scalar_functions.py`。
+需要写代码的文件：`Human/1_autodiff/minitorch/scalar_functions.py`。
 
 这一节单独强调边界：`ScalarFunction.backward` 不应该知道整张计算图，也不应该修改任何变量的 `derivative`。它只根据 forward 保存的上下文和传入的上游梯度，返回本函数各个输入位置应该收到的局部梯度。
 
@@ -302,13 +335,13 @@ python -m pytest tests/test_autodiff.py tests/test_scalar.py -m task1_4 -q
 怎样测试：
 
 ```sh
-cd Human/Module-1
+cd Human/1_autodiff
 python -m pytest tests/test_scalar.py -m task1_4 -q
 ```
 
 ### 7. Task 1.5：Scalar 训练
 
-需要写代码的文件：`Human/Module-1/project/run_scalar.py`。
+需要写代码的文件：`Human/1_autodiff/project/run_scalar.py`。
 
 你要完成两个位置：
 
@@ -317,7 +350,7 @@ python -m pytest tests/test_scalar.py -m task1_4 -q
 
 不要改 `ScalarTrain.train` 来掩盖网络实现问题。训练循环已经负责清梯度、计算 loss、调用 backward 和执行 optimizer；你要补的是模型结构和线性层计算。
 
-验证方式：先通过前面所有 `task1_*` 测试，再运行 `Human/Module-1/project/run_scalar.py` 或项目 app 观察训练是否能降低 loss。
+验证方式：先通过前面所有 `task1_*` 测试，再运行 `Human/1_autodiff/project/run_scalar.py` 或项目 app 观察训练是否能降低 loss。
 
 容易出错的地方：
 
@@ -328,9 +361,31 @@ python -m pytest tests/test_scalar.py -m task1_4 -q
 怎样测试：
 
 ```sh
-cd Human/Module-1
+cd Human/1_autodiff
 python project/run_scalar.py
 ```
+
+### 8. 全面验收：确认整个 Module 1 已完成
+
+先确认 Module 0 的实现已经同步到当前目录；`operators.py`、`module.py` 和对应旧测试中不能再保留“Need to include this file from past assignment”。然后检查所有 Module 1 作业入口：
+
+```sh
+cd Human/1_autodiff
+rg -n 'raise NotImplementedError|Need to include this file from past assignment' \
+  minitorch/autodiff.py minitorch/scalar.py minitorch/scalar_functions.py \
+  minitorch/operators.py minitorch/module.py project/run_scalar.py tests
+python -m pytest -q
+```
+
+`rg` 应没有作业占位命中。完整 pytest 既要通过 Module 1 的 scalar/autodiff 测试，也要通过同步进来的 Module 0 回归测试；不要把旧模块失败当成无关问题。测试中的预期 `xfail` 可以保留，但任何意外 `skip`、warning 或数值不稳定都要单独解释。
+
+最后执行端到端训练：
+
+```sh
+python -m project.run_scalar
+```
+
+训练应能跑完全部 epoch，不出现异常、`nan` 或无限 loss；loss 总体下降，正确数总体改善，而且 optimizer 确实更新了注册参数。若提交要求包含可视化或不同数据集，还要在项目 app 中分别检查 Simple、Diag、Split，并把真实结果记录进 `README.md`。只有前置同步、完整测试、训练 smoke test 和提交记录都通过，才算 Module 1 完成。
 
 ## 第三章：代码实现、逻辑与细节讲解
 

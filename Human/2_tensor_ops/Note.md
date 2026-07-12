@@ -173,26 +173,26 @@ Module 2 对应真实框架中的这些机制：
 
 ## 第二章：如何完成 Human 路径
 
-这一章只给 Human 路径的文件级路线图：在哪些文件写代码、每个文件承担什么任务、如何验证。它不会直接给出实现代码。真正写作业时请在 `Human/Module-2` 下完成；`AI/Module-2` 只适合作为做完后的对照阅读。
+这一章只给 Human 路径的文件级路线图：在哪些文件写代码、每个文件承担什么任务、如何验证。它不会直接给出实现代码。真正写作业时请在 `Human/2_tensor_ops` 下完成；`Answer/2_tensor_ops` 只适合作为做完后的对照阅读。
 
 ### 1. 总体顺序
 
-开始前先处理前置条件：`Human/Module-2` 依赖 Module 0 和 Module 1 的实现。如果 `Human/Module-2/minitorch/operators.py`、`Human/Module-2/minitorch/module.py`、`Human/Module-2/minitorch/autodiff.py`、`Human/Module-2/minitorch/scalar.py`、`Human/Module-2/project/run_scalar.py` 仍然是“Need to include this file from past assignment”，先把你自己在前面 Human 模块完成的版本同步过来。
+开始前先处理前置条件：`Human/2_tensor_ops` 依赖 Module 0 和 Module 1 的实现。如果 `Human/2_tensor_ops/minitorch/operators.py`、`Human/2_tensor_ops/minitorch/module.py`、`Human/2_tensor_ops/minitorch/autodiff.py`、`Human/2_tensor_ops/minitorch/scalar.py`、`Human/2_tensor_ops/project/run_scalar.py` 仍然是“Need to include this file from past assignment”，先把你自己在前面 Human 模块完成的版本同步过来。
 
 推荐顺序：
 
-1. 在 `Human/Module-2/minitorch/tensor_data.py` 完成 TensorData 的索引、枚举和 permute。
-2. 仍在 `Human/Module-2/minitorch/tensor_data.py` 完成 broadcasting 相关函数。
-3. 在 `Human/Module-2/minitorch/tensor_ops.py` 完成低层 `tensor_map`、`tensor_zip`、`tensor_reduce`。
-4. 在 `Human/Module-2/minitorch/tensor_functions.py` 完成 Tensor Function 的 forward。
-5. 在 `Human/Module-2/minitorch/tensor_functions.py` 完成 Tensor Function 的 backward。
-6. 在 `Human/Module-2/project/run_tensor.py` 完成 Tensor 训练网络。
+1. 在 `Human/2_tensor_ops/minitorch/tensor_data.py` 完成 TensorData 的索引、枚举和 permute。
+2. 仍在 `Human/2_tensor_ops/minitorch/tensor_data.py` 完成 broadcasting 相关函数。
+3. 在 `Human/2_tensor_ops/minitorch/tensor_ops.py` 完成低层 `tensor_map`、`tensor_zip`、`tensor_reduce`。
+4. 在 `Human/2_tensor_ops/minitorch/tensor_functions.py` 完成 Tensor Function 的 forward。
+5. 在 `Human/2_tensor_ops/minitorch/tensor_functions.py` 完成 Tensor Function 的 backward。
+6. 在 `Human/2_tensor_ops/project/run_tensor.py` 完成 Tensor 训练网络。
 
 这个顺序很重要。因为后面的所有 Tensor 运算都依赖前面的索引规则。
 
 ### 2. Task 2.1：TensorData indexing
 
-需要写代码的文件：`Human/Module-2/minitorch/tensor_data.py`。
+需要写代码的文件：`Human/2_tensor_ops/minitorch/tensor_data.py`。
 
 你要完成三个位置：
 
@@ -202,7 +202,7 @@ Module 2 对应真实框架中的这些机制：
 
 不要复制 storage 来实现 permute；本任务要训练的是“同一段底层数据可以用不同 strides 解释”的思想。
 
-验证位置：`Human/Module-2/tests/test_tensor_data.py` 中标记为 `task2_1` 的测试。
+验证位置：`Human/2_tensor_ops/tests/test_tensor_data.py` 中标记为 `task2_1` 的测试。
 
 检查重点：
 
@@ -220,13 +220,13 @@ Module 2 对应真实框架中的这些机制：
 怎样测试：
 
 ```sh
-cd Human/Module-2
+cd Human/2_tensor_ops
 python -m pytest tests/test_tensor_data.py -m task2_1 -q
 ```
 
 ### 3. Task 2.2：Broadcasting
 
-需要写代码的文件：`Human/Module-2/minitorch/tensor_data.py`。
+需要写代码的文件：`Human/2_tensor_ops/minitorch/tensor_data.py`。
 
 你要完成两个位置：
 
@@ -235,7 +235,7 @@ python -m pytest tests/test_tensor_data.py -m task2_1 -q
 
 写这部分时先从右侧维度对齐的规则出发，不要真的复制 Tensor 数据。broadcasting 在这里是索引映射，不是数据扩容。
 
-验证位置：`Human/Module-2/tests/test_tensor_data.py` 中标记为 `task2_2` 的测试。
+验证位置：`Human/2_tensor_ops/tests/test_tensor_data.py` 中标记为 `task2_2` 的测试。
 
 检查重点：
 
@@ -252,13 +252,13 @@ python -m pytest tests/test_tensor_data.py -m task2_1 -q
 怎样测试：
 
 ```sh
-cd Human/Module-2
+cd Human/2_tensor_ops
 python -m pytest tests/test_tensor_data.py -m task2_2 -q
 ```
 
 ### 4. Task 2.3：Tensor map、zip、reduce
 
-需要写代码的文件：`Human/Module-2/minitorch/tensor_ops.py`、`Human/Module-2/minitorch/tensor_functions.py`。
+需要写代码的文件：`Human/2_tensor_ops/minitorch/tensor_ops.py`、`Human/2_tensor_ops/minitorch/tensor_functions.py`。
 
 在 `tensor_ops.py` 中，你要完成低层 storage 版本的三个执行器：
 
@@ -268,7 +268,7 @@ python -m pytest tests/test_tensor_data.py -m task2_2 -q
 
 在 `tensor_functions.py` 中，你要完成 Task 2.3 标记的 forward 方法，例如乘法、sigmoid、ReLU、log、exp、比较、近似相等和 permute。这些 forward 应该调用 backend 上已经封装好的 map/zip/reduce 能力，而不是重新手写一遍 storage 遍历。
 
-验证位置：`Human/Module-2/tests/test_tensor.py` 中标记为 `task2_3` 的测试。
+验证位置：`Human/2_tensor_ops/tests/test_tensor.py` 中标记为 `task2_3` 的测试。
 
 检查重点：
 
@@ -287,13 +287,13 @@ python -m pytest tests/test_tensor_data.py -m task2_2 -q
 怎样测试：
 
 ```sh
-cd Human/Module-2
+cd Human/2_tensor_ops
 python -m pytest tests/test_tensor.py -m task2_3 -q
 ```
 
 ### 5. Task 2.4：Tensor backward
 
-需要写代码的文件：`Human/Module-2/minitorch/tensor_functions.py`。
+需要写代码的文件：`Human/2_tensor_ops/minitorch/tensor_functions.py`。
 
 你要补齐 Task 2.4 标记的 backward 方法。每个方法只负责本 Tensor Function 的局部反向规则：
 
@@ -302,9 +302,9 @@ python -m pytest tests/test_tensor.py -m task2_3 -q
 - 对比较类、索引类或形状参数这类不可导输入，返回零梯度或非 Tensor 占位。
 - 对 permute 这类重排操作，backward 要把梯度维度恢复到输入顺序。
 
-本任务通常不需要修改 `Human/Module-2/minitorch/tensor.py`。`Tensor.expand`、`Tensor.chain_rule` 等接口已经为 broadcasting 后的梯度还原提供入口；你要做的是让各个 Function 返回正确形态的局部梯度。
+本任务通常不需要修改 `Human/2_tensor_ops/minitorch/tensor.py`。`Tensor.expand`、`Tensor.chain_rule` 等接口已经为 broadcasting 后的梯度还原提供入口；你要做的是让各个 Function 返回正确形态的局部梯度。
 
-验证位置：`Human/Module-2/tests/test_tensor.py` 中标记为 `task2_4` 的测试。
+验证位置：`Human/2_tensor_ops/tests/test_tensor.py` 中标记为 `task2_4` 的测试。
 
 检查重点：
 
@@ -323,13 +323,13 @@ python -m pytest tests/test_tensor.py -m task2_3 -q
 怎样测试：
 
 ```sh
-cd Human/Module-2
+cd Human/2_tensor_ops
 python -m pytest tests/test_tensor.py -m task2_4 -q
 ```
 
 ### 6. Task 2.5：Tensor 训练
 
-需要写代码的文件：`Human/Module-2/project/run_tensor.py`。
+需要写代码的文件：`Human/2_tensor_ops/project/run_tensor.py`。
 
 你要完成两个位置：
 
@@ -338,7 +338,7 @@ python -m pytest tests/test_tensor.py -m task2_4 -q
 
 本模块还没有矩阵乘法，所以不要去改 `tensor_ops.py` 里的 `matrix_multiply`，也不要为了训练脚本临时引入外部矩阵库。线性层应当用本模块已有的 Tensor 操作表达，这样才能真正测试 broadcasting、sum、view、relu、sigmoid 是否协同工作。
 
-验证方式：先通过 `task2_1` 到 `task2_4` 的测试，再运行 `Human/Module-2/project/run_tensor.py` 或项目 app 观察训练是否能正常降低 loss。
+验证方式：先通过 `task2_1` 到 `task2_4` 的测试，再运行 `Human/2_tensor_ops/project/run_tensor.py` 或项目 app 观察训练是否能正常降低 loss。
 
 检查重点：
 
@@ -357,9 +357,30 @@ python -m pytest tests/test_tensor.py -m task2_4 -q
 怎样测试：
 
 ```sh
-cd Human/Module-2
+cd Human/2_tensor_ops
 python project/run_tensor.py
 ```
+
+### 7. 全面验收：确认整个 Module 2 已完成
+
+Module 2 的完整测试必须同时覆盖继承自 Module 0/1 的代码和新的 Tensor 路径。先确认前置文件已经同步，再检查作业范围内是否仍有占位实现：
+
+```sh
+cd Human/2_tensor_ops
+rg -n 'raise NotImplementedError|Need to include this file from past assignment' \
+  minitorch project/run_tensor.py tests
+python -m pytest -q
+```
+
+完整 pytest 应同时覆盖 `test_tensor_data.py` 和 `test_tensor.py`，并验证 indexing、broadcasting、map/zip/reduce、autodiff 和 grad check。对测试声明的预期 `xfail` 可以接受，但不能把 shape 错误、梯度错误或意外 skip 当成完成。
+
+然后运行端到端 Tensor 训练：
+
+```sh
+python -m project.run_tensor
+```
+
+训练应跑完全部 epoch，输出 shape 始终正确，loss 不出现 `nan`/无限值并总体下降，参数梯度能够产生且 optimizer 能更新参数。还应在项目 app 中检查 batch 输入、bias broadcasting 和分类边界，并按提交要求在 `README.md` 保存真实训练结果。只有前置模块回归、Tensor 全套测试、训练 smoke test 和人工结果检查全部通过，才算 Module 2 完成。
 
 ## 第三章：代码实现、逻辑与细节讲解
 

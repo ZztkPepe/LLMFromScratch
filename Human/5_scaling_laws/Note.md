@@ -37,7 +37,7 @@ TrainingConfig
 
 ### 1. Task 1：读清楚作业边界和测试入口
 
-需要查看的文件：`Human/assignment3-scaling/cs336_assignment3_scaling.pdf`、`Human/assignment3-scaling/README.md`、`Human/assignment3-scaling/tests/test_api.py`、`Human/assignment3-scaling/tests/test_scheduler.py`。
+需要查看的文件：`Human/5_scaling_laws/cs336_assignment3_scaling.pdf`、`Human/5_scaling_laws/README.md`、`Human/5_scaling_laws/tests/test_api.py`、`Human/5_scaling_laws/tests/test_scheduler.py`。
 
 先弄清楚四件事：
 
@@ -49,20 +49,20 @@ TrainingConfig
 怎样测试：
 
 ```sh
-cd Human/assignment3-scaling
+cd Human/5_scaling_laws
 uv run python -c "import cs336_scaling; print('ok')"
 ```
 
 ### 2. Task 2：理解并实现 TrainingConfig 校验
 
-需要写代码的文件：`Human/assignment3-scaling/cs336_scaling/training/training_config.py`、`Human/assignment3-scaling/cs336_scaling/stable_hash.py`。
+需要写代码的文件：`Human/5_scaling_laws/cs336_scaling/training/training_config.py`、`Human/5_scaling_laws/cs336_scaling/stable_hash.py`。
 
 你要确保训练配置在进入 API 前能被可靠校验，例如 token 数整除关系、attention head 维度关系、RoPE 维度要求、optimizer 参数范围、稳定 hash 和重复提交识别。这里不要为了单个测试绕过校验；hosted API 也依赖这些约束保护真实训练。
 
 怎样测试：
 
 ```sh
-cd Human/assignment3-scaling
+cd Human/5_scaling_laws
 uv run --extra server pytest tests/test_api.py::test_submit_jobs -q
 ```
 
@@ -70,14 +70,14 @@ uv run --extra server pytest tests/test_api.py::test_submit_jobs -q
 
 ### 3. Task 3：实现 budget 和 public API 行为
 
-需要写代码的文件：`Human/assignment3-scaling/cs336_scaling/api/public.py`、`Human/assignment3-scaling/cs336_scaling/budget.py`、`Human/assignment3-scaling/cs336_scaling/client.py`、`Human/assignment3-scaling/cs336_scaling/schemas/`。
+需要写代码的文件：`Human/5_scaling_laws/cs336_scaling/api/public.py`、`Human/5_scaling_laws/cs336_scaling/budget.py`、`Human/5_scaling_laws/cs336_scaling/client.py`、`Human/5_scaling_laws/cs336_scaling/schemas/`。
 
 你要让 submit、budget、experiments、experiment detail、final submission 这些公开接口行为一致。重点是预算预留、重复配置拒绝、final submission 覆盖语义，以及 client 侧返回结构。
 
 怎样测试：
 
 ```sh
-cd Human/assignment3-scaling
+cd Human/5_scaling_laws
 uv run --extra server pytest tests/test_api.py -q
 ```
 
@@ -85,20 +85,20 @@ uv run --extra server pytest tests/test_api.py -q
 
 ### 4. Task 4：实现调度公平性
 
-需要写代码的文件：`Human/assignment3-scaling/cs336_scaling/scheduler/experiment_selector.py`。
+需要写代码的文件：`Human/5_scaling_laws/cs336_scaling/scheduler/experiment_selector.py`。
 
 调度器应该优先照顾当前 running job 少的用户，再按排队时间排序。同一用户连续排多个任务时，要避免该用户把队列前部全部占满。
 
 怎样测试：
 
 ```sh
-cd Human/assignment3-scaling
+cd Human/5_scaling_laws
 uv run --extra server pytest tests/test_scheduler.py -q
 ```
 
 ### 5. Task 5：实现和使用 IsoFLOPs 分析脚本
 
-需要写代码的文件：`Human/assignment3-scaling/scripts/fit_isoflops.py`，输入数据来自 `Human/assignment3-scaling/data/isoflops_curves.json`。
+需要写代码的文件：`Human/5_scaling_laws/scripts/fit_isoflops.py`，输入数据来自 `Human/5_scaling_laws/data/isoflops_curves.json`。
 
 IsoFLOPs 的意思是：固定总训练 compute budget `C`，改变模型参数量 `N` 和训练 token 数 `D`，观察最终验证 loss。
 
@@ -125,13 +125,13 @@ L_opt(C) = E + A * C^(-alpha)
 怎样测试：
 
 ```sh
-cd Human/assignment3-scaling
+cd Human/5_scaling_laws
 uv run python scripts/fit_isoflops.py --target-compute-budget 1e22
 ```
 
 ### 6. Task 6：设计 hosted API 实验和最终提交
 
-需要使用或更新的文件：`Human/assignment3-scaling/cs336_scaling/client.py`、你的实验记录、最终 `TrainingConfig` 记录。
+需要使用或更新的文件：`Human/5_scaling_laws/cs336_scaling/client.py`、你的实验记录、最终 `TrainingConfig` 记录。
 
 先用 synthetic curves 建立直觉：
 
@@ -175,7 +175,7 @@ save_final_submission(
 怎样测试：
 
 ```sh
-cd Human/assignment3-scaling
+cd Human/5_scaling_laws
 export A3_API_KEY=<your_api_key>
 uv run python - <<'PY'
 from cs336_scaling.client import get_budget, list_experiments
@@ -185,6 +185,25 @@ PY
 ```
 
 这一步依赖 hosted API 和你的真实 API key；不能用本地 synthetic 结果替代真实实验记录。
+
+### 7. 全面验收：确认整个 Assignment 3 已完成
+
+Assignment 3 必须分三层验收，任何一层都不能替代另外两层。
+
+第一层是本地代码和服务端集成测试。使用锁定依赖，并在可连接的 PostgreSQL 测试数据库下运行：
+
+```sh
+cd Human/5_scaling_laws
+uv sync --extra server
+uv run --extra server pytest -q
+uv run ruff check cs336_scaling tests scripts
+```
+
+API、budget、数据库状态迁移和 scheduler 测试必须全部通过；如果仍停在 PostgreSQL connection error，只能说明代码尚未完成集成验收。测试数据库应与真实数据隔离，并在测试后确认没有遗留 running job 或 worker。
+
+第二层是离线 scaling-law 验证。用已知 synthetic 数据确认 IsoFLOPs 脚本能恢复合理趋势，再用真实实验导出的 JSON 重跑，检查 compute-optimal 点、拟合参数、预测值和输出文件都有限且可复现。synthetic 曲线只能验证分析代码，不能作为最终实验结论。
+
+第三层是 hosted API 验收：使用真实 `A3_API_KEY` 查询预算，提交小规模实验，确认 queued/running/completed/failed 状态和预算扣减符合预期；保存 final submission 后再读取确认配置与 predicted loss 完全一致。最终检查实验表、拟合记录、预算核算、最终配置和 leaderboard/written deliverables 均已保存。三层全部完成，才算 Assignment 3 完成。
 
 ## 4. 代码框架设计
 
