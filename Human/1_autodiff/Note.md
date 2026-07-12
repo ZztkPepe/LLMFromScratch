@@ -171,6 +171,39 @@ Module 1 实现的是同样思想的标量版本。它没有 Tensor 的多维数
 
 开始前先处理前置条件：`Human/1_autodiff` 依赖 Module 0 的实现。如果 `Human/1_autodiff/minitorch/operators.py`、`Human/1_autodiff/minitorch/module.py`、`Human/1_autodiff/tests/test_operators.py`、`Human/1_autodiff/tests/test_module.py` 仍然是“Need to include this file from past assignment”，先把你自己在 `Human/0_torch_basics` 完成的版本同步过来，再做 Module 1。
 
+#### 一键同步 Module 0
+
+不需要逐个复制函数。`Human/1_autodiff/sync_previous_module.py` 会读取同目录下的 `files_to_sync.txt`，把 Module 1 明确依赖的完整文件从相邻的 `Human/0_torch_basics` 复制过来。复制完整文件可以同时保留 imports、类型声明、测试和辅助逻辑，避免只复制函数时漏掉依赖。
+
+先预览将被覆盖的文件：
+
+```sh
+cd Human/1_autodiff
+python sync_previous_module.py --dry-run
+```
+
+确认清单正确后执行真实同步：
+
+```sh
+python sync_previous_module.py
+```
+
+默认会同步以下文件：
+
+- `minitorch/operators.py`
+- `minitorch/module.py`
+- `tests/test_module.py`
+- `tests/test_operators.py`
+- `project/run_manual.py`
+
+脚本会先检查所有源文件是否存在；只要缺少一个，就会在复制前停止，避免只同步一半。真实同步会覆盖 Module 1 中的同名文件，因此应先确认 Module 0 已完成并通过测试，同时提交或备份 Module 1 中需要保留的修改。
+
+如果目录不使用默认名称，也可以显式指定源和目标；相对路径按 `Human` 目录解析：
+
+```sh
+python sync_previous_module.py 0_torch_basics 1_autodiff
+```
+
 建议按下面顺序推进：
 
 1. 在 `Human/1_autodiff/minitorch/autodiff.py` 完成 `central_difference`。
