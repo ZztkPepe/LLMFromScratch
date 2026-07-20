@@ -53,11 +53,11 @@ def neg(x: float) -> float:
 
 
 def lt(x: float, y: float) -> bool:
-    return x < y
+    return float(x < y)
 
 
 def eq(x: float, y: float) -> bool:
-    return x ==y
+    return float(x == y)
 
 def max(x: float, y: float) -> float:
     return y if lt(x, y) else x
