@@ -122,6 +122,14 @@ uv run python
 
 这一步要弄清楚：测试不是直接找你的类名，而是通过 adapters 获取你的实现。所以实质代码应放在 `cs336_systems/`，adapters 只做薄连接。
 
+#### 知识点：分布式测试需要明确运行边界
+
+分布式代码同时跨越进程、设备和模块接口。adapter 不只连接函数名，也固定测试会怎样创建进程组、模型和输入。先厘清哪些状态由测试初始化、哪些资源由实现拥有，可以避免重复初始化、未销毁进程组或把测试专用行为写进核心模块。
+
+#### 大概实现逻辑
+
+逐个列出 attention、DDP、optimizer sharding 和 FSDP adapter 的输入输出与生命周期，让每个入口只构造或调用 `cs336_systems` 中对应对象。先验证单进程 import 和纯 PyTorch 路径，再运行最小多进程测试；失败应落在明确实现函数中，而不是 adapter 占位或环境导入阶段。
+
 怎样测试：
 
 ```sh
@@ -134,6 +142,14 @@ uv run python -c "import cs336_basics, cs336_systems; print('ok')"
 需要写代码的文件：`Human/4_distributed_systems/cs336_systems/attention.py` 和 `Human/4_distributed_systems/tests/adapters.py`。
 
 先写纯 PyTorch 的 `torch.autograd.Function`，不要急着写 Triton。forward 应该计算：
+
+#### 知识点：在线 softmax 与反向重计算
+
+FlashAttention 的核心不是改变 attention 数学结果，而是避免把完整的注意力矩阵长期写入显存。分块或在线 softmax 用每行最大值与归一化量保持数值稳定；backward 根据保存的紧凑统计和输入重新构造概率，用更多计算换更少内存。纯 PyTorch correctness path 先验证同一数学不变量。
+
+#### 大概实现逻辑
+
+先实现与参考 attention 数学等价的自定义 Function，明确保存哪些张量和每行统计量。forward 检查缩放、mask、softmax 与值聚合；backward 从上游输出梯度开始，按依赖关系依次恢复概率相关量并产生 Q/K/V 梯度。先与 PyTorch autograd 在小 shape、causal/non-causal 和不同 dtype 下对齐，再把同一分块不变量迁移到 Triton。
 
 ```text
 scores = QK^T / sqrt(d)
@@ -182,6 +198,14 @@ DDP 的最小正确版本必须做两件事：
 1. 初始化时从 rank 0 broadcast 参数和 buffer。
 2. backward 后平均所有 trainable 参数的梯度。
 
+#### 知识点：数据并行的同步不变量
+
+DDP 让每个 rank 保存一份模型、处理不同数据分片。为了等价于单进程 full batch，所有 rank 必须从相同参数开始，并在每步更新前拥有各 rank 梯度的平均值。异步 all-reduce 只改变通信时机，不能改变“optimizer 看到同步梯度”这一不变量。
+
+#### 大概实现逻辑
+
+初始化时以固定源 rank 广播参数和 buffer。为每个需要梯度的唯一参数安排同步，在梯度 ready 后启动 all-reduce，并保存通信 handle；进入 optimizer step 前统一等待，再完成 world-size 归一化。特别检查 tied parameter 不会注册两次、无梯度参数不会阻塞，以及每个 rank 的参数遍历顺序一致。
+
 更好的版本是在每个参数梯度 ready 时注册 hook，异步通信：
 
 ```text
@@ -218,6 +242,14 @@ uv run pytest tests/test_ddp.py -q
 
 Sharded optimizer 的关键是“谁负责更新哪个参数”。一个简单稳定的策略是按参数顺序分配：
 
+#### 知识点：分片的是优化器状态，不是最终模型视图
+
+Adam 一类优化器会为每个参数保存额外状态，完整复制到每个 rank 会浪费内存。Optimizer state sharding 把参数更新责任分配给不同 rank，使每个 rank 只保存自己负责部分的状态；更新后再同步参数，因此各 rank 仍看到完整且一致的模型。
+
+#### 大概实现逻辑
+
+先建立所有 rank 都能确定性重建的参数顺序和 owner 映射，再让本地 optimizer 只接收本 rank 的唯一参数。`step` 先执行本地更新，随后每个 owner 依次广播自己负责的最新参数；`zero_grad` 则覆盖整个包装模型的梯度。用 tied weights 和参数数目不能整除 world size 的情况检查分配稳定性。
+
 ```text
 owner_rank = parameter_index % world_size
 ```
@@ -250,6 +282,14 @@ uv run pytest tests/test_sharded_optimizer.py -q
 
 FSDP 的完整生产实现很复杂：真实参数分片、前向 all-gather、反向 all-gather、梯度 reduce-scatter、预取、释放 full weights、mixed precision。Human 路径建议先实现测试要求的 correctness path：
 
+#### 知识点：参数物化、梯度同步与混合精度是三件事
+
+FSDP 通过只在需要计算时物化完整参数、其余时间保留 shard 来降低模型状态内存；反向再把梯度归约回各 shard。课程 correctness path 可能保留更多 replicated 状态，但仍要分别保证参数视图正确、梯度跨 rank 等价，以及计算 dtype 不污染主参数 dtype。
+
+#### 大概实现逻辑
+
+先实现透明 module wrapper 与参数收集接口，确保不改变普通 forward 语义；再加入目标层的输入/计算 dtype 转换，并保证输出和参数状态符合测试契约。backward 完成后同步或归约梯度，`gather_full_params` 在所有 rank 上按确定顺序重建可比较状态。每加入一层能力都与未包装 baseline 对比 forward、gradient 和一步更新。
+
 1. 包装整个 module。
 2. 对 `Linear` 和 `Embedding` 安装 mixed precision hook。
 3. backward 后同步梯度，让 local batch 训练等价于 full batch baseline。
@@ -280,6 +320,14 @@ uv run pytest tests/test_fsdp.py -q
 需要写代码或实验记录的文件：`Human/4_distributed_systems/benchmark.py`，以及你的 profiling 记录和 written deliverables。
 
 核心测试通过后，再进入 PDF 里需要 GPU 的实验：
+
+#### 知识点：性能结论来自时间线和资源分解
+
+总 step 时间同时包含计算、通信、同步等待和框架开销；只比较一个 wall-clock 数字无法解释变化原因。Profiler 时间线能显示 kernel 与 collective 是否重叠，显存记录能区分参数、梯度、优化器状态和 activation，二者结合才说明优化是否真的改善瓶颈。
+
+#### 大概实现逻辑
+
+先固定硬件、模型、batch、warmup 和测量轮数建立 baseline，再一次只改变一种实现。分别记录 forward、backward、optimizer/full step、峰值显存和通信事件；检查数值 correctness 后才解读性能。保存命令、环境和原始 profiler 输出，并用多次运行的稳定统计比较，而不是挑选单次最快结果。
 
 - 用 `benchmark.py` 采集 forward/backward/full step timings。
 - 用 Nsight Systems 看 kernel timeline 和 communication overlap。

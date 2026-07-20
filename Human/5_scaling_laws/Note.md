@@ -46,6 +46,14 @@ TrainingConfig
 - queued/running/completed/failed 实验对 budget 的计算规则不同。
 - 最终提交由 `POST /final_submission` 保存，并包含完整配置和预测 loss。
 
+#### 知识点：Scaling Laws 是预算约束下的决策问题
+
+这份作业不只是拟合曲线，而是在训练算力、排队状态和实验次数都有限时选择下一次实验。代码测试验证服务是否正确记账和调度，真实实验则提供关于模型规模、token 数与 loss 的证据。两部分共同决定最终配置是否既合法又有数据依据。
+
+#### 大概实现逻辑
+
+先画出从配置提交到 queued、running、completed/failed、final submission 的状态流，并为每个状态标注预算影响和负责文件。再把测试按 config、API、scheduler、analysis 分类，确认每类失败对应哪个边界。此 Task 只建立地图和可运行入口，不提前修改约束来迁就尚未理解的测试。
+
 怎样测试：
 
 ```sh
@@ -58,6 +66,14 @@ uv run python -c "import cs336_scaling; print('ok')"
 需要写代码的文件：`Human/5_scaling_laws/cs336_scaling/training/training_config.py`、`Human/5_scaling_laws/cs336_scaling/stable_hash.py`。
 
 你要确保训练配置在进入 API 前能被可靠校验，例如 token 数整除关系、attention head 维度关系、RoPE 维度要求、optimizer 参数范围、稳定 hash 和重复提交识别。这里不要为了单个测试绕过校验；hosted API 也依赖这些约束保护真实训练。
+
+#### 知识点：配置校验同时定义合法空间和实验身份
+
+字段校验描述哪些模型能够被训练，跨字段校验描述多个参数之间必须共同满足的关系。稳定 hash 则把规范化后的配置变成实验身份，使相同语义的配置不会因为字典顺序或进程差异被当成不同实验。校验与去重必须确定且可复现。
+
+#### 大概实现逻辑
+
+先列出单字段范围，再列出涉及两个以上字段的 shape、整除和训练步数约束，并把错误放在配置构造边界。生成 hash 前把配置转成字段顺序稳定、表示唯一的序列化形式，排除运行时对象和非语义顺序。用合法边界值、每条约束的最小反例和字段顺序不同但语义相同的配置检查行为。
 
 怎样测试：
 
@@ -74,6 +90,14 @@ uv run --extra server pytest tests/test_api.py::test_submit_jobs -q
 
 你要让 submit、budget、experiments、experiment detail、final submission 这些公开接口行为一致。重点是预算预留、重复配置拒绝、final submission 覆盖语义，以及 client 侧返回结构。
 
+#### 知识点：预算是跨 API 状态的一致性约束
+
+提交实验会改变未来可用预算，状态迁移又可能释放或确认消耗。如果 submit、查询和 final submission 各自计算一套规则，就会出现超额提交或前后显示不一致。public API、budget helper、数据库 schema 与 client 应围绕同一个状态模型工作。
+
+#### 大概实现逻辑
+
+先定义每种实验状态计入“已用、已预留、可用”哪一项，再让所有 endpoint 复用同一预算计算入口。提交时在写入前完成身份与预算检查，并考虑并发请求下的原子性；查询接口只把数据库对象转换成稳定 schema；final submission 明确是新增、拒绝还是覆盖。最后用一串状态迁移测试总预算守恒。
+
 怎样测试：
 
 ```sh
@@ -89,6 +113,14 @@ uv run --extra server pytest tests/test_api.py -q
 
 调度器应该优先照顾当前 running job 少的用户，再按排队时间排序。同一用户连续排多个任务时，要避免该用户把队列前部全部占满。
 
+#### 知识点：公平调度是带状态的排序
+
+单纯按全局 FIFO 会让大量早到任务的用户长期占据资源，单纯轮询又可能忽略等待时间。这里的优先级由用户当前占用量和任务排队时间共同决定；每选中一个任务后，用户的模拟 running 数会变化，因此后续选择不能只使用一次静态排序。
+
+#### 大概实现逻辑
+
+从数据库快照统计每个用户正在运行的任务数和候选队列。每次选择当前负载最小的用户，再在该用户任务中选最早排队项；选中后立即更新内存中的模拟负载，直到填满可用槽位。用空队列、单用户、多用户负载不均和时间并列情况检查确定性。
+
 怎样测试：
 
 ```sh
@@ -101,6 +133,14 @@ uv run --extra server pytest tests/test_scheduler.py -q
 需要写代码的文件：`Human/5_scaling_laws/scripts/fit_isoflops.py`，输入数据来自 `Human/5_scaling_laws/data/isoflops_curves.json`。
 
 IsoFLOPs 的意思是：固定总训练 compute budget `C`，改变模型参数量 `N` 和训练 token 数 `D`，观察最终验证 loss。
+
+#### 知识点：先找组内最优点，再拟合跨预算规律
+
+同一个 compute budget 下的多次实验是在比较“参数量与数据量怎样分配”；不同 budget 的最优点连起来，才用于推断规模随 compute 的变化。若把所有原始点直接混在一条回归中，较差配置会污染 compute-optimal 趋势。幂律拟合常转到 log 空间理解，但 loss 带不可约下界时还要单独处理 offset。
+
+#### 大概实现逻辑
+
+读取并校验每条记录后按 compute 分组，在每组内找有限且 loss 最低的配置，形成 `(C, N_opt, D_opt, L_opt)` 序列。分别对规模关系做稳定拟合，检查参数、预测和残差均有限，再外推目标 budget。输出应同时保留组内选择、拟合参数和预测依据，方便发现某个异常点是否主导结果。
 
 对 dense Transformer，常用近似是：
 
@@ -140,6 +180,14 @@ uv run python scripts/fit_isoflops.py
 ```
 
 然后根据拟合结果设计小规模试探实验。不要一开始把 12 小时全押在一个配置上。更稳的方式是：
+
+#### 知识点：序贯实验设计
+
+每次 hosted 实验既消耗预算，也减少对某一片配置空间的不确定性。合理策略是在“探索尚不确定的区域”和“利用当前最优附近的配置”之间平衡，并为失败、排队和最终确认留出预算。预测 loss 也应来自同一批可追溯观测，而不是主观填写。
+
+#### 大概实现逻辑
+
+先用离线曲线提出一个中心规模和可接受区间，再用短跑实验校准吞吐、学习率与 loss 走势。根据新结果缩小下一轮范围，每轮提交前记录假设、预计成本和停止条件，完成后更新实验表与剩余预算。最终配置至少要有邻近实验支持，并在保存 final submission 后重新读取，确认配置、预测值和服务端记录一致。
 
 1. 选 2 到 3 个相近模型规模，训练较短时间，看 loss 曲线和速度。
 2. 固定架构族，扫描学习率、batch size、total tokens。

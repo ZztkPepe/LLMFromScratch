@@ -70,6 +70,14 @@ Response mask：一个布尔矩阵，标出哪些 label token 属于 response。
 
 README 明确说测试入口在 `tests/adapters.py`。第一步不是直接写训练 loop，而是让 adapter 调用你自己的实现模块。
 
+#### 知识点：alignment 流程由多个可独立验证的纯步骤组成
+
+GRPO train step 看起来是一条大流程，但 tokenization、logprob、reward、advantage、loss 和 aggregation 都有独立的 shape 与数值契约。adapter 把这些步骤暴露给测试，使问题能定位到某一层，而不是只能通过最终参数更新猜测错误来源。
+
+#### 大概实现逻辑
+
+先为每个 `run_*` 找到 `alignment.py` 中唯一对应函数，保持参数名、默认值和返回结构一致。adapter 只做转发，核心函数尽量不依赖全局状态。先让最早的 tokenization 测试进入实现，再按数据流顺序补后续步骤；不要一开始写一个绕过中间接口的整体训练函数。
+
 合理结构是：
 
 ```text
@@ -98,6 +106,14 @@ uv run pytest tests/test_grpo.py::test_tokenize_prompt_and_output -q
 - `labels`：同一序列右移一位，去掉第一个 token。
 - `response_mask`：和 `labels` 对齐，只在 response label 的位置为 True。
 
+#### 知识点：causal LM 训练是错位一格的预测
+
+模型在位置 `t` 的 logits 用来预测位置 `t+1` 的 token，所以输入与 labels 来自同一完整序列的左右错位切片。response mask 对齐的是“哪些 label 属于回答”，而不是原始拼接序列中回答从哪里开始；这就是边界会提前一个位置的原因。
+
+#### 大概实现逻辑
+
+先分别 tokenize prompt 与 output，记录每个样本真实长度，再拼接并按 batch 需要 padding。由完整序列构造错位后的 input/labels，最后在 labels 坐标系中标记 response token，padding 和 prompt label 都为 False。用极短 prompt/output 手工画索引表，确认三张量 shape 相同且 mask 的 True 数等于有效 response token 数。
+
 容易错的地方是 mask 对齐。假设 prompt 有 4 个 token，response 有 3 个 token，那么第一个 response label 出现在 label 位置 `prompt_len - 1`，不是 `prompt_len`。
 
 测试信号：`test_tokenize_prompt_and_output` 用 snapshot 精确比较三个张量。
@@ -114,6 +130,14 @@ uv run pytest tests/test_grpo.py::test_tokenize_prompt_and_output -q
 需要写代码的文件：`Human/7_grpo_alignment/cs336_alignment/alignment.py` 和 `Human/7_grpo_alignment/tests/adapters.py`。
 
 `run_get_response_log_probs` 输入 `input_ids` 和 `labels`，调用 causal LM 得到 logits，再做：
+
+#### 知识点：每个 token 的策略概率来自整份词表分布
+
+模型对每个位置输出 vocab 维 logits。训练只需要该位置真实 label 的 log-prob，但 entropy 使用完整分布衡量不确定性。直接对概率取 log 容易产生数值问题，因此应从稳定的 log-softmax 表示出发，并沿 vocab 维选择 label。
+
+#### 大概实现逻辑
+
+先确认模型 logits 的 batch、sequence、vocab 维与 labels 前两维对齐，再在 vocab 维计算稳定 log-prob。通过 labels 索引每个位置对应元素，并去掉被 gather 引入的单元素维。若请求 entropy，从同一 log-prob 恢复概率并沿 vocab 聚合；mask 留给上层 loss/metric 使用，不在这里改变 token 排列。
 
 ```text
 log_probs = log_softmax(logits)
@@ -141,6 +165,14 @@ uv run pytest tests/test_grpo.py::test_get_response_log_probs -q
 
 这一步很简单，但它决定后面所有 advantage 的输入。对每个 `(response, ground_truth)` 调用 reward function，收集 `reward` 成一维 tensor，同时记录一些 mean 作为 metadata。
 
+#### 知识点：reward 是文本世界到优化信号的边界
+
+reward function 可能返回正确性分数和额外 metadata；训练真正消费的是与 rollout 顺序一一对应的标量向量，监控则消费聚合指标。若顺序、dtype 或设备不稳定，后面的 advantage 即使公式正确也会配错样本。
+
+#### 大概实现逻辑
+
+按原 batch 顺序逐对调用 reward function，把主 reward 与附加字段分开收集。最后一次性构造指定 dtype/device 的一维 Tensor；metadata 仅对存在且可数值聚合的字段求 batch 统计，并使用清晰名称。用不同 reward 的小样本确认位置不被排序或分组打乱。
+
 常见错误：
 
 - 返回 Python list 而不是 tensor。
@@ -163,6 +195,14 @@ GRPO 的默认配置是：
 ```text
 advantage = (reward - group_mean) / (group_std + eps)
 ```
+
+#### 知识点：组内 baseline 降低的是相对难度差异
+
+同一 prompt 的多个 response 构成一个 group。减去组均值后，advantage 表示回答相对同组表现，而不是绝对 reward；是否再除标准差决定不同组的梯度尺度是否被归一。不同 GRPO 变体改变的是 baseline/scale 规则，但都必须保持原 batch 顺序。
+
+#### 大概实现逻辑
+
+先根据 group size 把一维 rewards 还原成“prompt × samples”视图，在组维计算所需均值和标准差，再按所选变体变换并展平回原顺序。显式处理组内全相同、标准差为零和不能整分组的输入；同时返回 raw/normalized reward 等 metadata，便于检查尺度是否合理。
 
 这里的 std 在测试里使用 unbiased std。其他变体包括：
 
@@ -188,6 +228,14 @@ on-policy 情况最直接：
 ```text
 loss_token = - advantage * log_prob_token
 ```
+
+#### 知识点：importance ratio 修正新旧策略分布差异
+
+on-policy 数据由当前策略生成，不需要分布修正；off-policy 更新时，新策略对同一 token 的概率已经变化，概率比率衡量这种偏移。clipping 限制单次更新对目标的影响，GRPO 在 token 粒度限制，GSPO 则先把整段 response 的 log-ratio 汇成 sequence 粒度，再用于该序列各 token。
+
+#### 大概实现逻辑
+
+先让 advantage 广播到 token 维，并只在有效 response mask 上解释 loss。需要旧策略时，在 log 空间相减后再指数化；根据 loss type 选择 token ratio 或 masked sequence ratio，并构造 unclipped/clipped 两个 surrogate。按目标定义选择保守一侧，返回逐 token loss，让后续 aggregation 统一处理 mask 和归一化。
 
 off-policy 情况需要 importance ratio：
 
@@ -219,6 +267,14 @@ uv run pytest tests/test_grpo.py -k compute_policy_gradient_loss -q
 - `sequence`：每条 response 内部先按 mask 平均，再对 batch 平均。
 - `constant`：所有 masked token loss 求和后除以固定常数。
 
+#### 知识点：归一化定义决定长短 response 的权重
+
+sequence normalization 让每条回答先贡献一个平均 loss，因此长回答不会仅因 token 多就占更大权重；constant normalization 保留 token loss 的总和比例，只用固定尺度控制梯度。两者数值都可能看起来合理，但表达的是不同训练目标，不能混用分母。
+
+#### 大概实现逻辑
+
+先用 response mask 把 prompt/padding loss 清零。sequence 模式为每条样本计算有效 token 数和 masked 平均，再对 batch 聚合，并处理零有效 token；constant 模式直接汇总所有有效 token 后除指定常数。用不同 response 长度的构造样例检查两种模式产生预期的相对权重。
+
 这一步看似小，但会影响 GRPO、Dr. GRPO、RFT 等变体的梯度尺度。
 
 怎样测试：
@@ -248,6 +304,14 @@ compute raw rewards
   -> optimizer.zero_grad()
 ```
 
+#### 知识点：microbatching 必须保持完整 batch 的梯度语义
+
+切 microbatch 是为降低峰值显存，不应改变一次 optimizer update 代表的目标函数。各 microbatch 的 loss 缩放取决于 aggregation 定义：局部平均需要按累计步数或全局样本数校正，固定分母的局部和则应直接累加。只有所有 microbatch backward 完成后才能裁剪并更新。
+
+#### 大概实现逻辑
+
+先在不切 batch 的路径上组合前面已验证的纯函数，得到参考 loss 和参数更新。再按相同顺序切分所有对齐张量，每块执行 forward、policy loss、aggregation 与 backward，并根据 normalization 选择正确缩放。循环结束后统一 grad clipping、step 和清梯度；用固定随机种子比较切分与不切分后的梯度或参数 snapshot。
+
 注意 `constant` normalization 和 `sequence` normalization 在 gradient accumulation 时处理不同。`sequence` 每个 microbatch 是局部平均，需要除以 `gradient_accumulation_steps`；`constant` 是固定全局常数，microbatch loss 应该相加。
 
 测试信号：`test_grpo_train_step_*` 会比较更新后的所有模型参数。如果 loss 只差一点点，参数 snapshot 也会失败。
@@ -270,6 +334,14 @@ uv run pytest tests/test_grpo.py -k grpo_train_step -q
 - `run_parse_mmlu_response`：从模型输出中解析 A/B/C/D。
 - `run_parse_gsm8k_response`：取最后一个数字作为答案。
 - `run_compute_per_instance_dpo_loss`：计算一个 preference pair 的 DPO loss。
+
+#### 知识点：SFT、评估解析与 DPO 是不同的数据契约
+
+SFT packing 把多条文本组织成固定长度的 next-token 样本；答案解析把自由文本转成可评分结果；DPO 比较 chosen/rejected 在策略与 reference 下的相对偏好。这三类功能共享 tokenizer/model，但 mask、截断和返回语义不同，不应塞进一个通用函数后靠分支猜测。
+
+#### 大概实现逻辑
+
+分别沿测试契约实现：packing 先 tokenize 每条样本并明确 EOS、截断与跨样本边界，再产生固定长度块；batch iterator 只负责确定顺序与张量化；解析函数对格式噪声设置清晰 fallback；DPO 先得到四组序列 log-prob，再按 chosen 相对 rejected 的策略变化构造逐样本 loss。每条路径先用最小手工例子验证边界。
 
 这些不是 README 指定的最小 `test_grpo.py`，但本地目录有测试，所以一起完成更稳。
 

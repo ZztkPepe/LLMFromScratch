@@ -89,6 +89,14 @@ PDF 后半部分还要求 TinyStories、OpenWebText、消融实验和 leaderboar
 
 先读 `cs336_assignment1_basics.pdf` 和 `tests/adapters.py`。测试只通过 `run_*` adapter 调你的代码，所以第一步是决定实现模块边界，然后让 adapter 转发到这些模块。adapter 不应该承载 BPE、模型、优化器等业务逻辑。
 
+#### 知识点：adapter 是稳定接口层
+
+测试 adapter 的作用是把课程规定的函数签名与学生自己的模块结构连接起来。它相当于一个很薄的协议转换层：测试只依赖稳定入口，而实现可以按职责拆分。若把算法写进 adapter，代码虽然可能通过局部测试，却会失去可复用、可调试的模块边界。
+
+#### 大概实现逻辑
+
+先逐个阅读 `run_*` 的参数与返回契约，为每类能力选择唯一的实现模块，再让 adapter 完成参数转发和必要的对象构造。初期可以让调用进入尚未完成的实现并产生明确失败，以证明接线正确；之后每完成一个模块，只替换实现内部，不继续膨胀 adapter。
+
 建议的实现文件边界：
 
 - `cs336_basics/bpe.py`：BPE 训练。
@@ -115,6 +123,14 @@ uv run pytest tests/test_train_bpe.py::test_train_bpe -q
 
 你要实现 byte-level BPE training，并让 `run_train_bpe` 调用它。注意 special token 切分、GPT-2 regex pre-tokenization、byte tuple 计数、pair 选择规则和 merge 更新。这里不要直接把逻辑写在 adapter 里，也不要为了某个 fixture 硬编码输出。
 
+#### 知识点：BPE 的贪心词表学习
+
+Byte-level BPE 从单字节符号开始，反复把语料中最值得合并的相邻符号对变成一个新 token。每轮合并都会改变后续 pair 的统计，因此词表和 merge 顺序共同定义 tokenizer 行为。special token 必须先被隔离，因为它们应作为不可拆分的控制符号，而不是参与普通 pair 竞争。
+
+#### 大概实现逻辑
+
+先把语料按 special token 边界和预分词规则切成带频次的 byte 序列，再建立相邻 pair 到出现位置或词条的统计。每轮按频次和规定的 tie-break 选择 pair，创建新 token，只更新受该合并影响的局部统计，并记录 merge 顺序。达到目标词表大小后返回 vocab 与 merges，并用小语料检查 special token、并列 pair 和重复词频。
+
 常见错误：
 
 - 没有在训练前用 special token 切分文本，导致词表里出现包含 `<|` 的普通 token。
@@ -134,6 +150,14 @@ uv run pytest tests/test_train_bpe.py -q
 
 你要实现 vocab/merges 加载、`encode`、`encode_iterable`、`decode` 和 special token 处理。special token 要在普通 regex pre-tokenization 前处理；重叠 special token 要有稳定优先级。
 
+#### 知识点：训练规则与编码规则必须一致
+
+Tokenizer 编码是在新文本上重放 BPE 学到的 merge 优先级。vocab 决定 token id 与 bytes 的映射，merges 决定相邻符号按什么顺序组合。decode 则把 token bytes 连接后统一解码；只要编码阶段随意改变 special token 或 merge 顺序，就无法保证 round trip。
+
+#### 大概实现逻辑
+
+加载阶段建立双向 vocab 和 pair 的 merge rank。编码时先稳定识别 special token，再对普通片段执行与训练一致的预分词，把每段转成 bytes，并反复应用当前 rank 最靠前的可用 merge。流式接口逐块复用同一编码逻辑；解码按 id 找回 bytes、拼接后使用明确的错误处理策略还原文本。
+
 怎样测试：
 
 ```sh
@@ -146,6 +170,14 @@ uv run pytest tests/test_tokenizer.py -q
 需要写代码的文件：`Human/3_transformer_basics/cs336_basics/model.py` 和 `Human/3_transformer_basics/tests/adapters.py`。
 
 建议按依赖顺序完成：`Linear`、`Embedding`、`RMSNorm`、`silu`、`SwiGLU`、scaled dot-product attention、RoPE、multi-head self-attention、`TransformerBlock`、`TransformerLM`。每个模块都要遵守测试 adapter 给定的权重形状和输出 shape。
+
+#### 知识点：Transformer 是 shape 契约的组合
+
+Transformer 的复杂度主要来自多个简单模块对张量维度的约定。Embedding 把 token id 变成 hidden vector；attention 在 sequence 维混合信息；SwiGLU 在特征维变换；residual 要求输入输出 shape 完全一致；RoPE 只旋转成对的特征维。只要其中一个 reshape、转置或广播方向错，后续模块都会出现看似无关的失败。
+
+#### 大概实现逻辑
+
+按最小依赖顺序逐个实现并独立测试，每个函数入口先写清输入与输出 shape。attention 中分开追踪 batch、head、sequence 和 head-dim，完成打分、mask、归一化和值聚合后再合并 heads；Block 只负责 norm、子层和 residual 的组合；LM 最后连接 embedding、若干 Block、final norm 与词表投影。每通过一层再进入下一层，避免整模调试。
 
 常见错误：
 
@@ -171,6 +203,14 @@ uv run pytest tests/test_model.py -q
 
 训练工具看起来简单，但容易出现数值或状态问题：
 
+#### 知识点：数值稳定性与可恢复训练状态
+
+训练工具一部分控制数值尺度，例如稳定 softmax、交叉熵和全局梯度裁剪；另一部分维护跨 step 状态，例如 AdamW 的一阶/二阶矩、学习率进度和 checkpoint iteration。正确的单步公式如果缺失状态或恢复顺序，长训练仍会悄悄偏离。
+
+#### 大概实现逻辑
+
+先实现无状态纯函数并用极端 logits 检查有限输出，再实现按参数保存状态的 optimizer 和 schedule。batch sampler 必须保证输入、目标错开一个 token且不越界。checkpoint 以一个一致快照保存模型、优化器和迭代位置，加载时恢复到调用者提供的对象。最后做“连续训练若干步”与“中途保存再恢复”的结果对比。
+
 - `softmax` 和 `cross_entropy` 都要先减最大值，避免 overflow。
 - `AdamW` 的 step 从 1 开始，moment state 要按参数保存。
 - weight decay 是 decoupled weight decay，不要混进 gradient。
@@ -193,6 +233,14 @@ uv run pytest tests/test_serialization.py
 需要写代码或脚本的文件：`Human/3_transformer_basics/cs336_basics/training.py`、`Human/3_transformer_basics/cs336_basics/generation.py`，以及你自己用于 TinyStories/OpenWebText 的训练入口或实验记录文件。
 
 当核心测试全部通过后，再进入 PDF 实验部分：
+
+#### 知识点：训练实验是受控比较
+
+实验的目标不是只得到一个能生成文本的模型，而是判断某个配置变化如何影响速度、稳定性和验证 loss。一次只改变少量因素、保留基线和完整元数据，才能把结果归因到学习率、batch size、归一化或位置编码，而不是随机种子或数据处理差异。
+
+#### 大概实现逻辑
+
+先用极小语料打通 tokenizer、二进制数据、训练、checkpoint 和生成的端到端链路，再固定随机种子和基线配置扩大规模。每次运行记录数据版本、模型配置、优化器、token 数、wall-clock 与 train/valid loss；生成时从明确 checkpoint 和采样参数出发。实验结束后比较曲线和样例，并把观察与原始记录对应起来。
 
 1. 下载 TinyStories / OpenWebText。
 2. 训练对应 vocab size 的 BPE tokenizer。
