@@ -200,6 +200,14 @@ Module 2 对应真实框架中的这些机制：
 - `to_index`：把线性 ordinal 转成某个 shape 下的多维 index。
 - `TensorData.permute`：返回共享同一 storage、但 shape/strides 维度顺序改变的新 `TensorData`。
 
+#### 知识点：逻辑索引、storage 与 strides
+
+Tensor 的多维坐标只是逻辑视图，真正的数据通常存放在一维 storage 中。shape 说明每一维有多长，strides 说明某一维索引增加 1 时，storage 位置要跨过多少元素。改变 shape/strides 可以重新解释同一块 storage，因此转置不一定需要搬动数据。
+
+#### 大概实现逻辑
+
+把索引转换拆成两个方向理解：多维 index 通过各维 index 与 stride 的组合定位 storage；线性 ordinal 则按 shape 从高维到低维分解出每一维坐标。`permute` 只按给定维度顺序重排 shape 和 strides，并继续引用原 storage。实现后用小 shape 手工列出坐标、位置和转置结果，再检查非连续布局。
+
 不要复制 storage 来实现 permute；本任务要训练的是“同一段底层数据可以用不同 strides 解释”的思想。
 
 验证位置：`Human/2_tensor_ops/tests/test_tensor_data.py` 中标记为 `task2_1` 的测试。
@@ -232,6 +240,14 @@ python -m pytest tests/test_tensor_data.py -m task2_1 -q
 
 - `shape_broadcast`：根据两个输入 shape 计算共同输出 shape，无法兼容时抛出 `IndexingError`。
 - `broadcast_index`：把较大输出 shape 的 index 映射回某个较小输入 shape 的 index。
+
+#### 知识点：广播是虚拟扩展
+
+Broadcasting 允许不同 shape 的 Tensor 参与逐元素运算，但它并不复制较小 Tensor。规则从最右侧维度对齐：维度长度相同可以直接匹配，其中一个为 1 时可被虚拟扩展；否则不兼容。被扩展的维度无论输出 index 是多少，都要映射回输入 index 0。
+
+#### 大概实现逻辑
+
+计算输出 shape 时从两个 shape 的尾部向前比较，并把每一维的兼容结果放到正确位置。映射 index 时先计算输入与输出的维度偏移，再逐维决定是复制对应输出坐标，还是因为输入维度为 1 而写 0。整个过程只生成 shape 或 index，不读取、扩充 storage。
 
 写这部分时先从右侧维度对齐的规则出发，不要真的复制 Tensor 数据。broadcasting 在这里是索引映射，不是数据扩容。
 
@@ -267,6 +283,14 @@ python -m pytest tests/test_tensor_data.py -m task2_2 -q
 - `tensor_reduce`：沿指定维度折叠输入，把结果写到输出 storage。
 
 在 `tensor_functions.py` 中，你要完成 Task 2.3 标记的 forward 方法，例如乘法、sigmoid、ReLU、log、exp、比较、近似相等和 permute。这些 forward 应该调用 backend 上已经封装好的 map/zip/reduce 能力，而不是重新手写一遍 storage 遍历。
+
+#### 知识点：把标量规则提升为 Tensor 执行器
+
+`map`、`zip`、`reduce` 分别代表一元逐元素、二元逐元素和沿维度聚合。它们把“当前元素怎么算”与“怎样遍历任意 shape/stride”分开：传入的标量函数负责数学规则，底层执行器负责索引、广播和 storage 读写。因此同一套遍历框架能复用到 sigmoid、加法、求和等多种操作。
+
+#### 大概实现逻辑
+
+每个执行器都以输出 ordinal 为遍历主线：先得到输出 index，再根据输入 shape 做广播映射，最后通过 strides 找到读写位置。`map` 映射一个输入，`zip` 分别映射两个输入，`reduce` 固定输出位置并沿目标维累积。高层 Tensor Function 只选择 backend 已生成的执行器和正确标量函数，不重复实现底层循环。
 
 验证位置：`Human/2_tensor_ops/tests/test_tensor.py` 中标记为 `task2_3` 的测试。
 
@@ -304,6 +328,14 @@ python -m pytest tests/test_tensor.py -m task2_3 -q
 
 本任务通常不需要修改 `Human/2_tensor_ops/minitorch/tensor.py`。`Tensor.expand`、`Tensor.chain_rule` 等接口已经为 broadcasting 后的梯度还原提供入口；你要做的是让各个 Function 返回正确形态的局部梯度。
 
+#### 知识点：Tensor 局部梯度与形状还原
+
+Tensor backward 仍然使用链式法则，但梯度现在带有 shape。forward 中的广播可能让输出维度比某个输入更大，反向时这些复制位置的贡献要沿扩展维相加，才能还原到输入 shape。重排类操作不改变数值，只改变坐标解释，所以其 backward 使用相反的维度重排。
+
+#### 大概实现逻辑
+
+逐个 Function 列出 forward 输入、输出 shape 和 backward 所需信息，只通过 context 保存必要值。backward 先按局部导数规则计算与输出梯度兼容的 Tensor，再让已有的 expand/chain-rule 机制处理广播还原。对 permute 先构造原排列的逆映射；对 reduce 明确被折叠维度怎样重新扩展。最后以 grad check 比较解析梯度和数值梯度。
+
 验证位置：`Human/2_tensor_ops/tests/test_tensor.py` 中标记为 `task2_4` 的测试。
 
 检查重点：
@@ -335,6 +367,14 @@ python -m pytest tests/test_tensor.py -m task2_4 -q
 
 - `Linear.forward`：用 Tensor 运算实现一层线性变换，输入是一批样本，输出是一批 hidden/output 表示。
 - `Network.forward`：串起三层线性层，前两层接 ReLU，最后一层输出概率。
+
+#### 知识点：没有矩阵乘法时的批量线性层
+
+线性层本质上是每个样本与每个输出单元权重之间的点积，再加偏置。即使当前模块还没有矩阵乘法，也可以通过增加长度为 1 的维度，让输入和权重借助 broadcasting 形成所有“样本－输出单元－输入特征”的乘积，再沿输入特征维求和。
+
+#### 大概实现逻辑
+
+先在纸上标出输入、权重、偏置和输出的目标 shape，再决定各 Tensor 需要怎样 `view` 才能广播。逐元素相乘后只沿输入特征所在维度 reduce，并把结果整理成 `(batch, output)`；偏置依靠广播加入。Network 复用该层组成前向链路。调试时逐层打印 shape，先验证单层和小 batch，再运行完整训练。
 
 本模块还没有矩阵乘法，所以不要去改 `tensor_ops.py` 里的 `matrix_multiply`，也不要为了训练脚本临时引入外部矩阵库。线性层应当用本模块已有的 Tensor 操作表达，这样才能真正测试 broadcasting、sum、view、relu、sigmoid 是否协同工作。
 

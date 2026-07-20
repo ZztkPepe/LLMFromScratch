@@ -299,6 +299,14 @@ python -m pytest tests/test_scalar.py -m task1_1 -q
 
 在 `scalar_functions.py` 中，你要补齐各个 `ScalarFunction.forward`，让 `ScalarFunction.apply` 能创建带 history 的新 `Scalar`。这里不要绕过 `apply` 直接返回 float；否则 forward 数值看起来对，后面 backward 会没有计算历史。
 
+#### 知识点：运算符分派与计算历史
+
+`Scalar` 的运算符负责把用户写下的 `+`、`*`、`log()` 等表达式分派给相应的 `ScalarFunction`。`apply` 不只是计算数值，还要把“哪个函数、哪些输入、哪些上下文”记录到输出的 history 中。正是这份历史让系统能在稍后从结果反查计算来源。
+
+#### 大概实现逻辑
+
+先让每个 `Scalar` 用户接口把普通数字统一包装成兼容输入，再委托给正确的 Function，而不是直接执行 Python 运算。每个 forward 只调用对应标量原语并按需要保存 backward 会用到的信息。最后确认返回值经过统一的 `apply` 路径生成，使结果数值正确且 history 完整；此阶段暂不实现整图求导。
+
 验证位置：`Human/1_autodiff/tests/test_scalar.py` 中标记为 `task1_2` 的测试。
 
 容易出错的地方：
@@ -319,6 +327,14 @@ python -m pytest tests/test_scalar.py -m task1_2 -q
 需要写代码的文件：`Human/1_autodiff/minitorch/scalar.py`。
 
 你要完成 `Scalar.chain_rule`。它只负责一个节点：从当前节点的 `history` 找到最后一个函数、上下文和输入变量，调用该函数的 backward，再把每个非 constant 输入和对应梯度配对返回。
+
+#### 知识点：向量－雅可比积的单节点版本
+
+反向传播不会单独保存完整雅可比矩阵，而是把当前节点收到的上游梯度乘上本操作的局部导数。对标量而言，这就是链式法则中的两段变化率相乘；若操作有多个输入，则每个输入都会得到一份与自身位置对应的梯度贡献。
+
+#### 大概实现逻辑
+
+从 history 取出创建当前值的 Function、context 和原始输入，把当前上游梯度交给该 Function 的 backward。将 backward 返回的各位置结果与 forward 输入按原顺序配对，过滤不参与求导的常量后返回。这里不累加、不递归，只完成“当前节点向直接父节点分发一次梯度贡献”。
 
 不要在 `chain_rule` 里遍历整张图，也不要在这里直接写入叶子变量的 `derivative`。整图遍历和梯度累积属于 Task 1.4。
 
@@ -348,6 +364,14 @@ python -m pytest tests/test_autodiff.py -m task1_3 -q
 
 在 `scalar_functions.py` 中，你要补齐 Task 1.4 标记的 backward 方法。每个 backward 只描述本函数的局部梯度规则，并返回和 forward 输入数量一致的梯度结果。
 
+#### 知识点：反向拓扑顺序与梯度累加
+
+计算图是有向无环图，一个变量可能通过多条路径影响输出。反向传播必须先汇总来自所有后继路径的贡献，再继续向更早节点传播；这要求节点按从输出到输入的反向拓扑顺序处理。同一节点收到的多份贡献遵循微分的加法规则，因此必须相加而不是覆盖。
+
+#### 大概实现逻辑
+
+先从输出节点做一次带 visited 集合的图遍历，把每个非 constant 节点只记录一次，并整理成输出优先的顺序。随后用一个以节点 id 为键的梯度表保存累计值：输出节点从初始导数开始；遇到叶子就把累计值写入其 derivative；遇到中间节点则调用 `chain_rule`，把每个父节点贡献加到表中。Function backward 所需的局部信息则由 forward 的 context 提供。
+
 检查重点：
 
 - 是否跳过常量节点。
@@ -373,6 +397,14 @@ python -m pytest tests/test_autodiff.py tests/test_scalar.py -m task1_4 -q
 
 这一节单独强调边界：`ScalarFunction.backward` 不应该知道整张计算图，也不应该修改任何变量的 `derivative`。它只根据 forward 保存的上下文和传入的上游梯度，返回本函数各个输入位置应该收到的局部梯度。
 
+#### 知识点：局部规则与图算法解耦
+
+自动微分能够扩展到很多操作，是因为“一个操作怎样求局部导数”和“整张图怎样传播梯度”被分成两层。新增数学函数只需定义自己的 forward/backward 契约，通用的 `backpropagate` 无需知道 sigmoid、乘法或比较操作的具体公式。
+
+#### 大概实现逻辑
+
+逐个检查 forward 有几个输入、backward 需要哪些中间量，并只保存必要信息。backward 收到上游梯度后，为每个输入位置产生对应贡献，返回数量和顺序必须与 forward 一致。可导输入应用局部导数，不可导的比较输入返回零贡献；不要在这些方法里访问叶子 derivative 或遍历 parents。
+
 需要处理的类包括 `Mul`、`Inv`、`Neg`、`Sigmoid`、`ReLU`、`Exp`、`LT`、`EQ`；`Add` 和 `Log` 已经给出示例，可以作为接口风格参考，但不要直接把别的函数硬套成同一种返回形状。
 
 容易出错的地方：
@@ -396,6 +428,14 @@ python -m pytest tests/test_scalar.py -m task1_4 -q
 
 - `Network.__init__`：注册三层线性层，结构应和已有 `forward` 逻辑匹配。
 - `Linear.forward`：用输入列表、权重参数和 bias 参数计算每个输出单元。
+
+#### 知识点：可微模型与参数优化
+
+线性层对输入做加权求和并加入偏置，多层网络再用非线性函数组合这些线性变换。因为权重和偏置都是 `Parameter` 包装的 `Scalar`，forward 会自然建立从 loss 到所有参数的计算图；backward 产生梯度，优化器再沿降低 loss 的方向更新参数。
+
+#### 大概实现逻辑
+
+先在构造函数中创建并注册与输入、隐藏层和输出尺寸匹配的三层结构。线性层逐个输出单元收集对应输入与权重的乘积，再合并偏置；Network 按已有结构串联线性层与激活函数。实现后先用单个样本检查输出类型和范围，再运行训练确认参数能被发现、梯度会清零并重新生成、loss 能总体下降。
 
 不要改 `ScalarTrain.train` 来掩盖网络实现问题。训练循环已经负责清梯度、计算 loss、调用 backward 和执行 optimizer；你要补的是模型结构和线性层计算。
 
