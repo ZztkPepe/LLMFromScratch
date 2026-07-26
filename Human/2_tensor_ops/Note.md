@@ -179,6 +179,37 @@ Module 2 对应真实框架中的这些机制：
 
 开始前先处理前置条件：`Human/2_tensor_ops` 依赖 Module 0 和 Module 1 的实现。如果 `Human/2_tensor_ops/minitorch/operators.py`、`Human/2_tensor_ops/minitorch/module.py`、`Human/2_tensor_ops/minitorch/autodiff.py`、`Human/2_tensor_ops/minitorch/scalar.py`、`Human/2_tensor_ops/project/run_scalar.py` 仍然是“Need to include this file from past assignment”，先把你自己在前面 Human 模块完成的版本同步过来。
 
+#### 一键同步 Module 1
+
+如果当前位于仓库的 `Human` 目录，直接执行：
+
+```sh
+cd 2_tensor_ops
+python3 sync_previous_module.py 1_autodiff 2_tensor_ops
+```
+
+如果从其他位置进入，请把 `<仓库根目录>` 替换为本机仓库所在目录：
+
+```sh
+cd <仓库根目录>/Human/2_tensor_ops
+python3 sync_previous_module.py 1_autodiff 2_tensor_ops
+```
+
+这条命令会读取当前目录中的 `files_to_sync.txt`，把 `Human/1_autodiff` 中已经完成的基础算子、Module、自动微分、Scalar 和 Scalar 训练相关文件复制到 `Human/2_tensor_ops`。
+
+这里有两个容易误解的路径规则：
+
+- 必须先进入 `Human/2_tensor_ops`，因为脚本直接从当前工作目录读取 `files_to_sync.txt`。如果在 `Human` 下直接运行脚本，就会出现 `FileNotFoundError: files_to_sync.txt`。
+- 两个参数必须写成 `1_autodiff` 和 `2_tensor_ops`，不要写成 `../1_autodiff`、`../2_tensor_ops` 或 `.`。脚本已经把查找根目录设为 `Human`，会自动把参数拼接到 `Human` 后面。
+
+成功时，第一行应显示：
+
+```text
+Looking for modules in :  <仓库根目录>/Human
+```
+
+随后会逐项显示 `Moving file`，最后显示 `Finished moving ... files`。同步会覆盖 `2_tensor_ops` 中的同名文件，因此执行前应确认 `1_autodiff` 已完成并通过测试。
+
 推荐顺序：
 
 1. 在 `Human/2_tensor_ops/minitorch/tensor_data.py` 完成 TensorData 的索引、枚举和 permute。
