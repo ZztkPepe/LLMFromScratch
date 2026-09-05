@@ -268,9 +268,16 @@ def tensor_map(fn: Callable[[float], float]) -> Any:
         in_shape: Shape,
         in_strides: Strides,
     ) -> None:
-        # TODO: Implement for Task 2.3.
-        raise NotImplementedError("Need to implement for Task 2.3")
-
+        # 在外面创建 out_index 和 in_index 是为了性能（如果在循环里创建新的数组，会产生大量堆分配）
+        out_index = np.zeros(len(out_shape), dtype=np.int32) # 正在处理的输出坐标
+        in_index = np.zeros(len(in_shape), dtype=np.int32) # 正在处理的输入坐标
+        for ordinal in range(int(operators.prod(out_shape))): 
+            to_index(ordinal, out_shape, out_index) # 获取 out index
+            broadcast_index(out_index, out_shape, in_shape, in_index) # 获取 in index
+            out_pos = index_to_position(out_index, out_strides)
+            in_pos = index_to_position(in_index, in_strides)
+            out[out_pos] = fn(float(in_storage[in_pos]))
+            
     return _map
 
 
@@ -318,9 +325,20 @@ def tensor_zip(fn: Callable[[float, float], float]) -> Any:
         b_shape: Shape,
         b_strides: Strides,
     ) -> None:
-        # TODO: Implement for Task 2.3.
-        raise NotImplementedError("Need to implement for Task 2.3")
-
+        # out 是一个 Storage，本质上是一个单维度的 ndarray，我们要一个一个的把每个 out 的 ele 算出来
+        # 所以我们的目标就是找到 out[i] 对应的 a_storage[j], b_storage[k]
+        out_index = np.zeros(len(out_shape), dtype=np.int32)
+        a_index = np.zeros(len(a_shape), dtype=np.int32)
+        b_index = np.zeros(len(b_shape), dtype=np.int32)
+        for i in range(int(operators.prod(out_shape))):
+            to_index(i, out_shape, out_index) # 必须先用 ordinal 获取 out index
+            broadcast_index(out_index, out_shape, a_shape, a_index)
+            broadcast_index(out_index, out_shape, b_shape, b_index)
+            out_pos = index_to_position(out_index, out_strides)
+            a_pos = index_to_position(a_index, a_strides)
+            b_pos = index_to_position(b_index, b_strides)
+            out[out_pos] = fn(a_storage[a_pos], b_storage[b_pos])
+            
     return _zip
 
 
@@ -354,8 +372,21 @@ def tensor_reduce(fn: Callable[[float, float], float]) -> Any:
         a_strides: Strides,
         reduce_dim: int,
     ) -> None:
-        # TODO: Implement for Task 2.3.
-        raise NotImplementedError("Need to implement for Task 2.3")
+        # 这里有一个稍微的区别就是 reduce dim，可以选择某一维度进行 reduce
+        out_index = np.zeros(len(out_shape), dtype=np.int32)
+        a_index = np.zeros(len(a_shape), dtype=np.int32)
+        for i in range(int(operators.prod(out_shape))):
+            to_index(i, out_shape, out_index)
+            for dim in range(len(out_index)):
+                a_index[dim] = out_index[dim] # 为了 JIT 优化
+            out_pos = index_to_position(out_index, out_strides)
+            # 因为要沿着 reduce dim 的维度进行 reduce，所以要遍历原本的a张量中的 reduce dim，然后在这个维度上进行 reduce
+            # a_shape[reduce_dim]：这个归约轴上一共有多少个元素
+            # a_index[reduce_dim]：当前在访问这个归约轴上的第j个位置
+            for j in range(int(a_shape[reduce_dim])): # 我们把这个轴上的位置进行遍历
+                a_index[reduce_dim] = j # 先定位维度上的位置：j
+                a_pos = index_to_position(a_index, a_strides) # 然后通过这个位置找到 a_pos 
+                out[out_pos] = fn(out[out_pos], a_storage[a_pos])
 
     return _reduce
 

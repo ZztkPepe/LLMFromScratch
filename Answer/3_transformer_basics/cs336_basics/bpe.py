@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Iterable
+from concurrent.futures import ProcessPoolExecutor
 import os
 
 import regex as re
 
+from .pretokenization_example import find_chunk_boundaries
+
 
 GPT2_PRETOKEN_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+MAX_PRETOKENIZATION_WORKERS = 4
 
 
 def _initial_vocab(special_tokens: list[str]) -> dict[int, bytes]:
@@ -38,6 +42,50 @@ def _pretoken_counts(text: str, special_tokens: list[str]) -> Counter[tuple[byte
     return counts
 
 
+def _pretoken_counts_for_chunk(
+    input_path: str | os.PathLike,
+    start: int,
+    end: int,
+    special_tokens: list[str],
+) -> Counter[tuple[bytes, ...]]:
+    with open(input_path, "rb") as f:
+        f.seek(start)
+        text = f.read(end - start).decode("utf-8", errors="ignore")
+    return _pretoken_counts(text, special_tokens)
+
+
+def _parallel_pretoken_counts(
+    input_path: str | os.PathLike,
+    special_tokens: list[str],
+) -> Counter[tuple[bytes, ...]]:
+    num_workers = min(MAX_PRETOKENIZATION_WORKERS, os.cpu_count() or 1)
+    split_token = special_tokens[0].encode("utf-8") if special_tokens else b""
+
+    with open(input_path, "rb") as f:
+        boundaries = find_chunk_boundaries(
+            f,
+            desired_num_chunks=num_workers if split_token else 1,
+            split_special_token=split_token,
+        )
+
+    chunks = list(zip(boundaries[:-1], boundaries[1:]))
+    if not chunks:
+        return Counter()
+    if len(chunks) == 1:
+        start, end = chunks[0]
+        return _pretoken_counts_for_chunk(input_path, start, end, special_tokens)
+
+    counts: Counter[tuple[bytes, ...]] = Counter()
+    with ProcessPoolExecutor(max_workers=len(chunks)) as executor:
+        futures = [
+            executor.submit(_pretoken_counts_for_chunk, input_path, start, end, special_tokens)
+            for start, end in chunks
+        ]
+        for future in futures:
+            counts.update(future.result())
+    return counts
+
+
 def _iter_pairs(word: tuple[bytes, ...]) -> Iterable[tuple[bytes, bytes]]:
     return zip(word, word[1:])
 
@@ -60,15 +108,12 @@ def train_bpe(
     vocab_size: int,
     special_tokens: list[str],
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    with open(input_path, encoding="utf-8") as f:
-        text = f.read()
-
     vocab = _initial_vocab(special_tokens)
     merges: list[tuple[bytes, bytes]] = []
     if vocab_size <= len(vocab):
         return dict(list(vocab.items())[:vocab_size]), merges
 
-    word_counts = _pretoken_counts(text, special_tokens)
+    word_counts = _parallel_pretoken_counts(input_path, special_tokens)
     words = dict(enumerate(word_counts.keys()))
     counts = dict(enumerate(word_counts.values()))
     pair_counts: Counter[tuple[bytes, bytes]] = Counter()

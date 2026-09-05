@@ -42,9 +42,10 @@ def index_to_position(index: Index, strides: Strides) -> int:
     Returns:
         Position in storage
     """
-
-    # TODO: Implement for Task 2.1.
-    raise NotImplementedError("Need to implement for Task 2.1")
+    position = 0
+    for i, s in zip(index, strides):
+        position += i * s
+    return position
 
 
 def to_index(ordinal: int, shape: Shape, out_index: OutIndex) -> None:
@@ -60,14 +61,16 @@ def to_index(ordinal: int, shape: Shape, out_index: OutIndex) -> None:
         out_index : return index corresponding to position.
 
     """
-    # TODO: Implement for Task 2.1.
-    raise NotImplementedError("Need to implement for Task 2.1")
+    remain = ordinal
+    for i in reversed(range(len(shape))):
+        remain, out_index[i] = divmod(remain, shape[i])
 
 
 def broadcast_index(
     big_index: Index, big_shape: Shape, shape: Shape, out_index: OutIndex
 ) -> None:
     """
+    把广播后大张量中的逻辑坐标 big_index，映射回原始小张量中的逻辑坐标 out_index。
     Convert a `big_index` into `big_shape` to a smaller `out_index`
     into `shape` following broadcasting rules. In this case
     it may be larger or with more dimensions than the `shape`
@@ -83,8 +86,15 @@ def broadcast_index(
     Returns:
         None
     """
-    # TODO: Implement for Task 2.2.
-    raise NotImplementedError("Need to implement for Task 2.2")
+    offset = len(big_shape) - len(shape)
+    for small_dim in range(len(shape)):
+        big_dim = small_dim + offset
+        if shape[small_dim] == 1:
+            out_index[small_dim] = 0
+        elif shape[small_dim] == big_shape[big_dim]:
+            out_index[small_dim] = big_index[big_dim]
+        else:
+            raise IndexingError()
 
 
 def shape_broadcast(shape1: UserShape, shape2: UserShape) -> UserShape:
@@ -101,8 +111,21 @@ def shape_broadcast(shape1: UserShape, shape2: UserShape) -> UserShape:
     Raises:
         IndexingError : if cannot broadcast
     """
-    # TODO: Implement for Task 2.2.
-    raise NotImplementedError("Need to implement for Task 2.2")
+
+    boardcasted_shape = []
+    for i in range(1, max(len(shape1), len(shape2)) + 1):
+        dim1 = shape1[-i] if i <= len(shape1) else 1
+        dim2 = shape2[-i] if i <= len(shape2) else 1
+        if dim1 == 1:
+            boardcasted_shape.append(dim2)
+        elif dim2 == 1:
+            boardcasted_shape.append(dim1)
+        elif dim1 == dim2:
+            boardcasted_shape.append(dim1)
+        else:
+            raise IndexingError(f"Can't boardcast {shape1} and {shape2}")
+        
+    return tuple(reversed(boardcasted_shape))
 
 
 def strides_from_shape(shape: UserShape) -> UserStrides:
@@ -221,9 +244,14 @@ class TensorData:
         assert list(sorted(order)) == list(
             range(len(self.shape))
         ), f"Must give a position to each dimension. Shape: {self.shape} Order: {order}"
-
-        # TODO: Implement for Task 2.1.
-        raise NotImplementedError("Need to implement for Task 2.1")
+        shape, strides = [x for x in self.shape], [x for x in self.strides]
+        # 我们只需要修改 shape 和 strides 就可以变换一个 tensor 的排列了。
+        # permute 只重排 shape 和 strides，不复制 storage，逻辑遍历顺序与物理内存顺序不一致，因此得到的视图通常是逻辑非连续的。
+        for i in range(len(order)):
+            shape[i] = self.shape[order[i]]
+            strides[i] = self.strides[order[i]]
+        return TensorData(self._storage, tuple(shape), tuple(strides))
+        
 
     def to_string(self) -> str:
         s = ""

@@ -64,7 +64,7 @@ def topological_sort(variable: Variable) -> Iterable[Variable]:
     """
     topo, visited = [], set()
     def build(var: Variable) -> None:
-        if var.unique_id not in visited:
+        if var.unique_id not in visited and not (var.is_constant()):
             visited.add(var.unique_id)
             for parent in var.parents:
                 build(parent)
